@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("hive.theme");
+        const initialTheme = savedTheme === "dark" || savedTheme === "light"
+          ? savedTheme
+          : window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        document.documentElement.dataset.theme = initialTheme;
+        document.querySelector('meta[name="theme-color"]')?.setAttribute("content", initialTheme === "dark" ? "#000000" : "#FFFFFF");
+      } catch {}
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <title>Hive</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

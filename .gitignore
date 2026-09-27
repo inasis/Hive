@@ -1,0 +1,17 @@
+/target
+/dist
+/build
+.DS_Store
+
+# Electrobun desktop and Capacitor Android apps
+node_modules/
+apps/desktop/build/
+apps/desktop/dist/
+apps/desktop/.hutch/
+apps/desktop/.cottontail-tmp/
+apps/desktop/artifacts/
+apps/android/android/app/src/main/assets/public/
+apps/android/android/app/src/main/assets/capacitor.config.json
+apps/android/android/app/src/main/assets/capacitor.plugins.json
+artifacts/android/*.apk
+dist/

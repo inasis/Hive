@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Hive</string>
+    <string name="title_activity_main">Hive</string>
+    <string name="package_name">dev.hive.codexbridge</string>
+    <string name="custom_url_scheme">dev.hive.codexbridge</string>
+    <string name="daemon_connection_channel">Hive 연결 유지</string>
+    <string name="daemon_connection_title">Hive 데몬 연결 유지 중</string>
+    <string name="daemon_connection_description">백그라운드에서도 데몬 연결을 유지하고 복구합니다.</string>
+</resources>

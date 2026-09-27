@@ -1,0 +1,46 @@
+name: Electrobun macOS build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - apps/desktop/**
+      - src/**
+      - .github/workflows/macos-build.yml
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - src/**
+      - .github/workflows/macos-build.yml
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: Electrobun macOS arm64
+    runs-on: macos-15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        run: npm ci --prefix apps/desktop
+
+      - name: Build Electrobun app
+        run: npm run desktop:build
+
+      - name: Upload macOS package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hive-macos-arm64
+          path: apps/desktop/artifacts/
+          if-no-files-found: error
+          retention-days: 14
