@@ -4,7 +4,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { bridgeRpc, isDaemonClient, isLinuxDesktop, isMobileApp, setAndroidStatusBarAppearance, setAssistantProvider } from "./bridgeClient";
-import { ASSISTANT_PROVIDERS } from "../../../../src/assistant-providers";
+import { ASSISTANT_PROVIDERS } from "../../../../src/domain/provider-catalog.js";
 import { FileDocument, FilesPanel, TerminalPanel, type WorkspaceFileOpenRequest } from "./WorkspacePanels";
 import { useSpringUiMotion } from "./useSpringUiMotion";
 import type { AssistantProvider, AssistantProviderInfo, BridgeEvent, GtkSettings, GtkTitleButtonRaster, PromptImageAttachment, RemoteCommand, RemoteMode, RemoteModel, RemoteSkill, RemoteThread, TranscriptEntry, WorkspaceFileText } from "../shared/bridge";

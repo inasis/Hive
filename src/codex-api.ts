@@ -1,4 +1,5 @@
 import { CodexRpcConnection } from "./codex-rpc.js";
+import type { AssistantModel } from "./domain/assistant.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -11,15 +12,7 @@ export type CodexThread = JsonObject & {
   updatedAt?: string | number;
 };
 
-export type CodexModel = {
-  model: string;
-  displayName: string;
-  description: string;
-  defaultReasoningEffort: string;
-  supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
-  isDefault: boolean;
-  hidden: boolean;
-};
+export type CodexModel = AssistantModel;
 
 type CodexAppServerMethod =
   | "thread/list"

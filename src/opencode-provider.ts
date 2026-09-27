@@ -1,14 +1,7 @@
 import { openCodeAuthorization, probeOpenCodeApi, type OpenCodeApiVersion } from "./opencode-api.js";
+import type { AssistantModel } from "./domain/assistant.js";
 
-export type OpenCodeModel = {
-  model: string;
-  displayName: string;
-  description: string;
-  defaultReasoningEffort: string;
-  supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
-  isDefault: boolean;
-  hidden: boolean;
-};
+export type OpenCodeModel = AssistantModel;
 
 export type OpenCodeSkill = {
   id: string;

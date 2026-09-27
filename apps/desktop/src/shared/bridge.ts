@@ -1,73 +1,27 @@
-import type { AssistantProvider, AssistantProviderInfo } from "../../../../src/assistant-providers.js";
+import type { AssistantProvider, AssistantProviderInfo } from "../../../../src/domain/provider-catalog.js";
+import type {
+  AssistantCommand as RemoteCommand,
+  AssistantMode as RemoteMode,
+  AssistantModel as RemoteModel,
+  AssistantSkill as RemoteSkill,
+  AssistantThread as RemoteThread,
+  PromptImageAttachment,
+  ReasoningEffort as RemoteReasoningEffort,
+  TranscriptEntry,
+} from "../../../../src/domain/assistant.js";
 import type { DaemonApiMethod } from "../../../../src/daemon-api-contract.js";
 
-export type { AssistantProvider, AssistantProviderInfo } from "../../../../src/assistant-providers.js";
-
-export type RemoteThread = {
-  id: string;
-  provider: AssistantProvider;
-  title: string;
-  cwd: string;
-  preview: string;
-  updatedAt: string | number | null;
-};
-
-export type PromptImageAttachment = {
-  name: string;
-  mimeType: string;
-  data: string;
-};
-
-export type TranscriptEntry = {
-  id: string;
-  role: "user" | "assistant" | "tool" | "change";
-  text: string;
-  turnId?: string;
-  providerMessageId?: string;
-  responseCompleted?: boolean;
-  toolType?: "commandExecution" | "mcpToolCall" | "webSearch";
-  command?: string;
-  output?: string;
-  status?: string;
-  images?: PromptImageAttachment[];
-};
-
-export type RemoteSkill = {
-  id: string;
-  name: string;
-  description: string;
-  provider: string;
-  scope: string;
-  enabled: boolean;
-};
-
-export type RemoteCommand = {
-  name: string;
-  description: string;
-  provider: string;
-  takesArguments: boolean;
-};
-
-export type RemoteMode = {
-  id: string;
-  name: string;
-  description: string;
-};
-
-export type RemoteReasoningEffort = {
-  reasoningEffort: string;
-  description: string;
-};
-
-export type RemoteModel = {
-  model: string;
-  displayName: string;
-  description: string;
-  defaultReasoningEffort: string;
-  supportedReasoningEfforts: RemoteReasoningEffort[];
-  isDefault: boolean;
-  hidden: boolean;
-};
+export type { AssistantProvider, AssistantProviderInfo } from "../../../../src/domain/provider-catalog.js";
+export type {
+  AssistantCommand as RemoteCommand,
+  AssistantMode as RemoteMode,
+  AssistantModel as RemoteModel,
+  AssistantSkill as RemoteSkill,
+  AssistantThread as RemoteThread,
+  PromptImageAttachment,
+  ReasoningEffort as RemoteReasoningEffort,
+  TranscriptEntry,
+} from "../../../../src/domain/assistant.js";
 
 export type WorkspaceFileItem = {
   name: string;

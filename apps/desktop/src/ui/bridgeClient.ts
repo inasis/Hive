@@ -1,7 +1,7 @@
 import { registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { Electroview } from "electrobun/view";
 import { isDaemonApiMethod } from "../../../../src/daemon-api-contract";
-import { isAssistantProvider } from "../../../../src/assistant-providers";
+import { isAssistantProvider } from "../../../../src/domain/provider-catalog.js";
 import type { AssistantProvider, BridgeEvent, HiveBridgeSchema } from "../shared/bridge";
 
 type BridgeEventListener = (event: BridgeEvent) => void;

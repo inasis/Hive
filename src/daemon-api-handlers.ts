@@ -5,24 +5,18 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import type { Duplex } from "node:stream";
 import { promisify } from "node:util";
 import { assertSshTarget, LOCAL_CODEX_TARGET } from "./codex-rpc.js";
-import { CodexAppServerApi, type CodexModel, type CodexThread } from "./codex-api.js";
+import { CodexAppServerApi, type CodexThread } from "./codex-api.js";
 import { defaultOpenCodeModel, mapOpenCodeSession, mapOpenCodeTranscript, openCodeModelFromMessages, openCodeModelFromSession, OpenCodeProviderConnection, type OpenCodeBridgeEvent, type OpenCodeModel, type OpenCodeSkill } from "./opencode-provider.js";
 import { ensureOpenCodeServer, stopManagedOpenCodeServer } from "./opencode-server.js";
 import { secureRelayStream } from "./e2e-stream.js";
 import { discoverSkills, readPiSkill, type AvailableSkill, type SkillCatalog } from "./skills.js";
 import { connectHiveRelay, parseHiveRelayTarget } from "./tcp-relay.js";
 import { listLocalWorkspaceFiles, readLocalWorkspaceFile, requestRelayWorkspaceFile, requestSshWorkspaceFile, requestSshWorkspaceWrite, writeLocalWorkspaceFile } from "./workspace-files.js";
-import { ASSISTANT_PROVIDERS, DEFAULT_ASSISTANT_PROVIDER, isAssistantProvider, type AssistantProvider } from "./assistant-providers.js";
+import { ASSISTANT_PROVIDERS, DEFAULT_ASSISTANT_PROVIDER, isAssistantProvider, type AssistantProvider } from "./domain/provider-catalog.js";
+import type { AssistantCommand as RemoteCommand, AssistantMode as RemoteMode, AssistantModel as RemoteModel, AssistantSkill as RemoteSkill, AssistantThread as RemoteThread, PromptImageAttachment as KiroPromptImage, ReasoningEffort as RemoteReasoningEffort, TranscriptEntry } from "./domain/assistant.js";
 import { isDaemonApiMethod, isProviderDaemonApiMethod, type ProviderDaemonApiMethod, type SharedDaemonApiMethod } from "./daemon-api-contract.js";
 import { deleteKiroSession, forgetKiroSessionAlias, forgetKiroSessionPolicyPresets, getKiroSessionPolicyPresets, isValidKiroSessionId, KiroAcpConnection, listKiroModels, listKiroSessions, listKiroSkills, renameKiroSession, saveKiroSessionPolicyPresets, type KiroNotification, type KiroServerRequest } from "./kiro-provider.js";
 import { randomUUID } from "node:crypto";
-type RemoteThread = { id: string; title: string; cwd: string; preview: string; updatedAt: string | number | null; provider: AssistantProvider };
-type KiroPromptImage = { name: string; mimeType: string; data: string };
-type TranscriptEntry = { id: string; role: "user" | "assistant" | "tool" | "change"; text: string; turnId?: string; providerMessageId?: string; responseCompleted?: boolean; toolType?: "commandExecution" | "mcpToolCall" | "webSearch"; command?: string; output?: string; status?: string };
-type RemoteSkill = { id: string; name: string; description: string; provider: string; scope: string; enabled: boolean };
-type RemoteCommand = { name: string; description: string; provider: string; takesArguments: boolean };
-type RemoteMode = { id: string; name: string; description: string };
-type RemoteModel = CodexModel;
 type BridgeEvent = { target: string; threadId: string; method: string; params: unknown; provider?: AssistantProvider; requestId?: number | string };
 
 const daemonEventListeners = new Set<(event: BridgeEvent) => void>();
@@ -34,7 +28,6 @@ export function subscribeDaemonEvents(listener: (event: BridgeEvent) => void): (
 }
 
 type JsonObject = Record<string, unknown>;
-type RemoteReasoningEffort = { reasoningEffort: string; description: string };
 type RemoteSession = {
   api: CodexAppServerApi;
   activeThreadId?: string;
