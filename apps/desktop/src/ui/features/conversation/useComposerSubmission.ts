@@ -6,6 +6,7 @@ import type { AppPage } from "../workspace/workspace-types";
 import { upsertProviderThreads, type LocalImageAttachment } from "./session-state";
 import type { ThreadViewStore } from "./thread-view-store";
 import type { ConversationRuntime } from "./useConversationRuntime";
+import { isHiveComposerCommandName, runHiveComposerCommand } from "./hive-composer-commands";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -36,8 +37,6 @@ export type ComposerSubmissionOptions = {
     setDraft: StateSetter<string>;
     setNotice: StateSetter<string>;
     setSlashCommands: StateSetter<RemoteCommand[]>;
-    setFilter: StateSetter<string>;
-    setActivePage: StateSetter<AppPage>;
     setModelSettingsDialogOpen: StateSetter<boolean>;
     setThreads: StateSetter<RemoteThread[]>;
     setImageAttachments: StateSetter<LocalImageAttachment[]>;
@@ -49,16 +48,24 @@ export type ComposerSubmissionOptions = {
     setSelectedSkill: StateSetter<RemoteSkill | null>;
   };
   actions: {
-    disconnect(): Promise<void>;
-    createSideChat(initialPrompt?: string): Promise<void>;
     openThread(target: string, thread: RemoteThread, sideChatId?: string): Promise<void>;
     steerPrompt(text: string, skillId?: string): Promise<void>;
     updateThreadEntries(target: string, provider: AssistantProvider, threadId: string, update: (current: TranscriptEntry[]) => TranscriptEntry[]): void;
   };
+  hiveCommands: {
+    setters: {
+      setFilter: StateSetter<string>;
+      setActivePage: StateSetter<AppPage>;
+    };
+    actions: {
+      disconnect(): Promise<void>;
+      createSideChat(initialPrompt?: string): Promise<void>;
+    };
+  };
 };
 
 /** Route composer submissions to Hive commands, provider commands, or new provider turns. */
-export function useComposerSubmission({ state, refs, setters, actions }: ComposerSubmissionOptions) {
+export function useComposerSubmission({ state, refs, setters, actions, hiveCommands }: ComposerSubmissionOptions) {
   const sendPrompt = async (inputText?: string): Promise<void> => {
     const pendingImages = assistantProviderSupports(state.threadProvider, "images") ? state.imageAttachments : [];
     const text = (inputText ?? state.draft).trim() || (pendingImages.length ? "첨부한 이미지를 확인해 주세요." : "");
@@ -66,7 +73,7 @@ export function useComposerSubmission({ state, refs, setters, actions }: Compose
     if (state.slashMenuOpen && state.slashSkillLoading) return;
     const typedCommand = text.match(/^\/([A-Za-z0-9._/-]+)(?:\s+([\s\S]*))?$/);
     let matchedSlashCommand = typedCommand && state.slashCommands.find((command) => command.name === typedCommand[1]);
-    const localCommand = typedCommand && /^(?:help|quit|exit|side|resume|skills)$/i.test(typedCommand[1]);
+    const localCommand = typedCommand && isHiveComposerCommandName(typedCommand[1]);
     if (typedCommand && !matchedSlashCommand && !localCommand) {
       try {
         const result = await bridgeRpc.request.listCommands({
@@ -100,44 +107,12 @@ export function useComposerSubmission({ state, refs, setters, actions }: Compose
       await actions.steerPrompt(text, skillId);
       return;
     }
-    if (text === "/help") {
-      setters.setNotice("Hive 명령: /side [질문], /skills [검색어], /skill:<이름> [요청], /resume <세션 ID>, /quit. 그 밖의 입력은 현재 세션에 전달됩니다.");
-      setters.setDraft("");
-      return;
-    }
-    if (text === "/quit" || text === "/exit") {
-      setters.setDraft("");
-      await actions.disconnect();
-      return;
-    }
-    const sideCommand = text.match(/^\/side(?:\s+([\s\S]*))?$/i);
-    if (sideCommand) {
-      refs.runtime.clearDraft(state.connectedTarget, state.threadProvider, state.activeThreadId);
-      setters.setDraft("");
-      await actions.createSideChat(sideCommand[1] ?? "");
-      return;
-    }
-    const resumeCommand = text.match(/^\/resume(?:\s+([A-Za-z0-9_-]{1,128}))?$/i);
-    if (resumeCommand) {
-      const requestedId = resumeCommand[1];
-      const matches = requestedId ? state.threads.filter((thread) => thread.id === requestedId || thread.id.startsWith(requestedId)) : [];
-      const match = matches.find((thread) => thread.provider === state.threadProvider) ?? (matches.length === 1 ? matches[0] : undefined);
-      if (!match) {
-        setters.setNotice(requestedId
-          ? "해당 ID와 일치하는 세션이 없습니다."
-          : "왼쪽 세션 목록에서 이어갈 대화를 선택하거나 /resume <세션 ID>를 입력하세요.");
-      } else {
-        await actions.openThread(state.connectedTarget, match);
-      }
-      setters.setDraft("");
-      return;
-    }
-    if (/^\/skills(?:\s|$)/i.test(text)) {
-      setters.setFilter(text.replace(/^\/skills\s*/i, ""));
-      setters.setActivePage("skills");
-      setters.setDraft("");
-      return;
-    }
+    if (await runHiveComposerCommand(text, {
+      state,
+      refs,
+      setters: { ...setters, ...hiveCommands.setters },
+      actions: { ...hiveCommands.actions, openThread: actions.openThread },
+    })) return;
     if (assistantProviderSupports(state.threadProvider, "requiresModelBeforePrompt") && !state.currentModel.trim()) {
       setters.setNotice(state.models.some((model) => !model.hidden)
         ? `${state.threadProviderName} 모델을 선택한 뒤 메시지를 보내세요.`

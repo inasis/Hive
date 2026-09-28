@@ -619,8 +619,6 @@ export function App({ onMobileDisconnect, onUseDirectConnection, onUseDaemonConn
       setDraft,
       setNotice,
       setSlashCommands,
-      setFilter,
-      setActivePage,
       setModelSettingsDialogOpen,
       setThreads,
       setImageAttachments,
@@ -632,11 +630,13 @@ export function App({ onMobileDisconnect, onUseDirectConnection, onUseDaemonConn
       setSelectedSkill,
     },
     actions: {
-      disconnect: () => disconnect(),
-      createSideChat,
       openThread,
       steerPrompt,
       updateThreadEntries,
+    },
+    hiveCommands: {
+      setters: { setFilter, setActivePage },
+      actions: { disconnect: () => disconnect(), createSideChat },
     },
   });
 
