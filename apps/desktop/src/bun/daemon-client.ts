@@ -2,25 +2,15 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import type { TLSSocket } from "node:tls";
 import WebSocket, { type RawData } from "ws";
 import { parseBridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
-import { parseDaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-api.js";
-import { parseDaemonApiResponse } from "../../../../src/interfaces/contracts/daemon-response.js";
-import type { DaemonApiMethod } from "../../../../src/interfaces/contracts/daemon-api.js";
 import type { BridgeEvent } from "../shared/bridge.js";
+import { BunDaemonRpcChannel } from "./daemon-rpc.js";
 
 const MAX_DAEMON_MESSAGE_BYTES = 16 * 1024 * 1024;
-const REQUEST_TIMEOUT_MS = 120_000;
 
 export type DaemonCredentials = {
   endpoint: string;
   token: string;
   fingerprint: string;
-};
-
-type PendingRequest = {
-  method: DaemonApiMethod;
-  resolve: (value: unknown) => void;
-  reject: (error: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
 };
 
 type TlsWebSocket = WebSocket & {
@@ -32,15 +22,26 @@ export class PinnedDaemonClient {
   private socket?: WebSocket;
   private connected = false;
   private manuallyClosed = false;
-  private nextRequestId = 1;
   private pingTimer?: ReturnType<typeof setInterval>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private reconnectAttempt = 0;
   private reconnecting = false;
   private credentials?: DaemonCredentials;
-  private readonly pending = new Map<number, PendingRequest>();
+  private readonly rpc: BunDaemonRpcChannel;
 
-  constructor(private readonly onEvent: (event: BridgeEvent) => void) {}
+  constructor(private readonly onEvent: (event: BridgeEvent) => void) {
+    this.rpc = new BunDaemonRpcChannel({
+      isOpen: () => this.connected && this.socket?.readyState === WebSocket.OPEN,
+      send: (data, callback) => {
+        const socket = this.socket;
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+          callback(new Error("Hive 데몬 연결이 끊어졌습니다. 연결 설정을 확인하세요."));
+          return;
+        }
+        socket.send(data, callback);
+      },
+    });
+  }
 
   connect(credentials: DaemonCredentials): Promise<void> {
     if (this.socket && this.socket.readyState < WebSocket.CLOSING) {
@@ -119,20 +120,8 @@ export class PinnedDaemonClient {
         } else if (packet.type === "event") {
           const event = parseBridgeEvent(packet.event);
           if (event) this.onEvent(event);
-        } else if (packet.type === "response" && (typeof packet.id === "number" || typeof packet.id === "string")) {
-          const id = Number(packet.id);
-          const pending = this.pending.get(id);
-          if (!pending) return;
-          this.pending.delete(id);
-          clearTimeout(pending.timeout);
-          if (typeof packet.error === "string") pending.reject(new Error(packet.error));
-          else {
-            try {
-              pending.resolve(parseDaemonApiResponse(pending.method, packet.result));
-            } catch (error) {
-              pending.reject(error instanceof Error ? error : new Error(String(error)));
-            }
-          }
+        } else if (packet.type === "response") {
+          this.rpc.receiveResponse(packet);
         } else if (packet.type === "error" && typeof packet.error === "string") {
           fail(new Error(packet.error));
         }
@@ -148,7 +137,7 @@ export class PinnedDaemonClient {
         if (this.socket === socket) this.socket = undefined;
         this.stopPing();
         const reason = closeReason(code, rawReason);
-        this.rejectPending(reason);
+        this.rpc.rejectAll(reason);
         if (!settled) settle(new Error(reason));
         if (wasConnected && !this.manuallyClosed) {
           this.onEvent({ target: "", threadId: "", method: "hive/transport/disconnected", params: { message: reason } });
@@ -159,33 +148,7 @@ export class PinnedDaemonClient {
   }
 
   request(method: string, params: unknown): Promise<unknown> {
-    let request;
-    try {
-      request = parseDaemonApiRequest(method, params);
-    } catch (error) {
-      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
-    }
-    const socket = this.socket;
-    if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error("Hive 데몬 연결이 끊어졌습니다. 연결 설정을 확인하세요."));
-    }
-
-    const id = this.nextRequestId++;
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error("Hive 데몬 응답 시간이 초과되었습니다."));
-      }, REQUEST_TIMEOUT_MS);
-      this.pending.set(id, { method: request.method, resolve, reject, timeout });
-      socket.send(JSON.stringify({ type: "request", id, ...request }), (error) => {
-        if (!error) return;
-        const pending = this.pending.get(id);
-        if (!pending) return;
-        this.pending.delete(id);
-        clearTimeout(pending.timeout);
-        pending.reject(error);
-      });
-    });
+    return this.rpc.request(method, params);
   }
 
   disconnect(): void {
@@ -195,7 +158,7 @@ export class PinnedDaemonClient {
     this.reconnecting = false;
     this.connected = false;
     this.stopPing();
-    this.rejectPending("Hive 데몬 연결을 종료했습니다.");
+    this.rpc.rejectAll("Hive 데몬 연결을 종료했습니다.");
     const socket = this.socket;
     this.socket = undefined;
     if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, "Client disconnected");
@@ -247,13 +210,6 @@ export class PinnedDaemonClient {
     this.reconnectTimer = undefined;
   }
 
-  private rejectPending(message: string): void {
-    for (const [id, pending] of this.pending) {
-      this.pending.delete(id);
-      clearTimeout(pending.timeout);
-      pending.reject(new Error(message));
-    }
-  }
 }
 
 function normalizeCredentials(credentials: DaemonCredentials): DaemonCredentials & { fingerprint: string } {
