@@ -1,5 +1,8 @@
 import { parseBridgeEvent, type BridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
 import { parseDaemonApiRequest, type DaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-api.js";
+import { parseDaemonServerPacket } from "../../../../src/interfaces/contracts/daemon-transport.js";
+import { normalizeDaemonCredentials } from "../../../../src/adapters/transport/daemon-credentials.js";
+import { DaemonReconnectPolicy } from "../../../../src/adapters/transport/daemon-reconnect-policy.js";
 import { MobileDaemonRpcChannel } from "./mobile-daemon-rpc";
 import { MobileDaemonSocket, type MobileBridgeCredentials } from "./mobile-daemon-socket";
 type BridgeEventListener = (event: BridgeEvent) => void;
@@ -9,14 +12,14 @@ export type NativeDaemonBridge = {
   disconnect(): Promise<void>;
 };
 
-/** Own WSS authentication, TLS pinning, reconnects, and mobile daemon request framing. */
-export class MobileDaemonTransport {
+/** Own daemon pairing, WSS authentication, reconnects, and mobile/native desktop request routing. */
+export class DaemonClientTransport {
   private readonly socket: MobileDaemonSocket;
   private readonly rpc = new MobileDaemonRpcChannel();
   private readonly eventListeners = new Set<BridgeEventListener>();
+  private readonly reconnectPolicy = new DaemonReconnectPolicy();
   private credentials: MobileBridgeCredentials | undefined;
   private reconnectTimer: number | null = null;
-  private reconnectAttempt = 0;
   private reconnectInFlight = false;
   private connected = false;
   private reconnectStopped = true;
@@ -60,11 +63,18 @@ export class MobileDaemonTransport {
 
   connect(endpoint: string, token: string, fingerprint: string): Promise<void> {
     this.disconnect();
-    const credentials = this.normalizeCredentials(endpoint, token, fingerprint);
-    if (credentials instanceof Error) return Promise.reject(credentials);
+    let credentials: MobileBridgeCredentials;
+    try {
+      credentials = normalizeDaemonCredentials(
+        { endpoint, token, fingerprint },
+        { requireFingerprint: this.android || this.useNativeDaemon() },
+      );
+    } catch (error) {
+      return Promise.reject(asError(error));
+    }
     this.credentials = credentials;
     this.reconnectStopped = false;
-    this.reconnectAttempt = 0;
+    this.reconnectPolicy.reset();
     window.addEventListener("online", this.handleNetworkAvailable);
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
     this.reconnectInFlight = true;
@@ -90,26 +100,6 @@ export class MobileDaemonTransport {
     if (this.useNativeDaemon()) void this.nativeDaemon.disconnect().catch(() => {});
     this.clearTransport();
     this.rpc.rejectAll("Hive 데몬 연결을 종료했습니다.");
-  }
-
-  private normalizeCredentials(endpoint: string, token: string, fingerprint: string): MobileBridgeCredentials | Error {
-    let url: URL;
-    try {
-      url = new URL(endpoint.trim());
-    } catch {
-      return new Error("데몬 주소를 wss:// 형식으로 입력하세요.");
-    }
-    if (url.protocol !== "wss:") return new Error("데몬 연결에는 암호화된 wss:// 주소가 필요합니다.");
-    if (url.pathname === "/" || url.pathname === "") url.pathname = "/rpc";
-    if (url.pathname !== "/rpc" || url.search || url.hash || url.username || url.password) {
-      return new Error("데몬 주소에는 /rpc 경로만 사용할 수 있습니다.");
-    }
-    const certificatePin = fingerprint.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
-    if ((this.android || this.useNativeDaemon()) && !/^[a-f0-9]{64}$/.test(certificatePin)) {
-      return new Error("데몬이 출력한 SHA-256 인증서 지문 64자리를 입력하세요.");
-    }
-    if (!token.trim()) return new Error("데몬 페어링 토큰을 입력하세요.");
-    return { endpoint: url.toString(), token: token.trim(), fingerprint: certificatePin };
   }
 
   private openConnection(credentials: MobileBridgeCredentials): Promise<void> {
@@ -152,14 +142,14 @@ export class MobileDaemonTransport {
   }
 
   private receiveMessage(data: string, credentials: MobileBridgeCredentials, finish: (error?: Error) => void): void {
-    let packet: Record<string, unknown>;
+    let packet: ReturnType<typeof parseDaemonServerPacket>;
     try {
       const parsed: unknown = JSON.parse(data);
-      if (!isRecord(parsed)) return;
-      packet = parsed;
+      packet = parseDaemonServerPacket(parsed);
     } catch {
       return;
     }
+    if (!packet) return;
     if (packet.type === "authenticated") {
       finish();
       if (this.android && !this.reconnectStopped && this.credentials === credentials) {
@@ -170,9 +160,9 @@ export class MobileDaemonTransport {
     } else if (packet.type === "event") {
       const event = parseBridgeEvent(packet.event);
       if (event) this.publish(event);
-    } else if (this.rpc.receivePacket(packet)) {
-      return;
-    } else if (packet.type === "error" && typeof packet.error === "string") {
+    } else if (packet.type === "response") {
+      this.rpc.receivePacket(packet);
+    } else if (packet.type === "error") {
       finish(new Error(packet.error));
     }
   }
@@ -180,7 +170,7 @@ export class MobileDaemonTransport {
   private stopReconnect(clearCredentials: boolean): void {
     this.reconnectStopped = true;
     if (clearCredentials) this.credentials = undefined;
-    this.reconnectAttempt = 0;
+    this.reconnectPolicy.reset();
     if (this.reconnectTimer !== null) {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -211,8 +201,7 @@ export class MobileDaemonTransport {
       window.clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-    const delay = delayMs ?? Math.min(30_000, 1_000 * 2 ** Math.min(this.reconnectAttempt, 5));
-    if (delayMs === undefined) this.reconnectAttempt += 1;
+    const delay = delayMs ?? this.reconnectPolicy.nextDelayMs();
     this.reconnectTimer = window.setTimeout(() => {
       this.reconnectTimer = null;
       const credentials = this.credentials;
@@ -225,13 +214,13 @@ export class MobileDaemonTransport {
           this.scheduleReconnect();
           return;
         }
-        this.reconnectAttempt = 0;
+        this.reconnectPolicy.reset();
         this.notifyTransport("hive/transport/reconnected");
       }).catch((error: unknown) => {
         this.reconnectInFlight = false;
         if (this.reconnectStopped || this.credentials !== credentials) return;
         const message = asError(error).message;
-        if (/페어링 토큰|certificate.*(mismatch|invalid|does not match)|fingerprint.*(mismatch|does not match)/i.test(message)) {
+        if (this.reconnectPolicy.isCredentialFailure(message)) {
           this.stopReconnect(false);
           if (this.android) void this.socket.setKeepAlive(false).catch(() => {});
           this.notifyTransport("hive/transport/failed", message);
@@ -260,10 +249,6 @@ export class MobileDaemonTransport {
     this.socket.reset();
   }
 
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function asError(error: unknown): Error {

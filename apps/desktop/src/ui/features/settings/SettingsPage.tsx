@@ -47,7 +47,7 @@ export function ConnectionSettingsPage({
   onTargetChange,
   onConnect,
   onDisconnect,
-  onMobileDisconnect,
+  onChangeDaemonSettings,
   onUseDirectConnection,
   onUseDaemonConnection,
 }: {
@@ -66,7 +66,7 @@ export function ConnectionSettingsPage({
   onTargetChange: (target: string) => void;
   onConnect: () => void;
   onDisconnect: () => void;
-  onMobileDisconnect?: () => void;
+  onChangeDaemonSettings?: () => void;
   onUseDirectConnection?: () => void;
   onUseDaemonConnection?: () => void;
 }) {
@@ -134,7 +134,7 @@ export function ConnectionSettingsPage({
           <dt>Provider 설정</dt><dd>{presentation.runtimeLabel}</dd>
         </dl>
         <p>{presentation.statusDescription}</p>
-        {onMobileDisconnect && <button className="dialog-secondary mobile-change-desktop" onClick={onMobileDisconnect}>데몬 연결 설정 변경</button>}
+        {onChangeDaemonSettings && <button className="dialog-secondary daemon-settings-change" onClick={onChangeDaemonSettings}>데몬 연결 설정 변경</button>}
         {onUseDirectConnection && <button className="dialog-secondary" onClick={onUseDirectConnection}>SSH 또는 릴레이로 직접 연결</button>}
         {onUseDaemonConnection && <button className="dialog-secondary" onClick={onUseDaemonConnection}>Hive 데몬에 연결</button>}
       </aside>

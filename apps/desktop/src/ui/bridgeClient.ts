@@ -3,7 +3,7 @@ import { DEFAULT_ASSISTANT_PROVIDER, isAssistantProvider } from "../../../../src
 import { parseBridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
 import { isProviderDaemonApiMethod } from "../../../../src/interfaces/contracts/daemon-api.js";
 import { LOCAL_WORKSPACE_TARGET, type AssistantProvider, type BridgeEvent, type HiveBridgeSchema } from "../shared/bridge";
-import { MobileDaemonTransport } from "../platform/mobile-daemon-transport";
+import { DaemonClientTransport } from "../platform/daemon-client-transport";
 import { browserPreferences } from "../platform/browser-preferences";
 import { PREFERENCE_KEYS, type PreferencesPort } from "../shared/preferences";
 import { normalizeBridgeEvent, type UiBridgeEventListener } from "./shared/bridge-event-adapter";
@@ -23,12 +23,13 @@ export const isMobileApp = typeof window !== "undefined" && (
   window.location.protocol === "capacitor:"
 );
 export const isLinuxDesktop = typeof navigator !== "undefined" && !isMobileApp && /linux/i.test(navigator.platform);
+export const isWindowsDesktop = typeof navigator !== "undefined" && !isMobileApp && /win/i.test(navigator.platform);
 export const preferences: PreferencesPort = browserPreferences;
 let activeAssistantProvider: AssistantProvider = readAssistantProvider();
-export let isDaemonClient = isMobileApp || (isLinuxDesktop && readDesktopDaemonMode());
+export let isDaemonClient = isMobileApp || readDesktopDaemonMode();
 const isAndroidApp = isMobileApp && window.Capacitor?.getPlatform?.() === "android";
 
-const mobileTransport = new MobileDaemonTransport(isAndroidApp, () => isLinuxDesktop && isDaemonClient, {
+const daemonClientTransport = new DaemonClientTransport(isAndroidApp, () => !isMobileApp && isDaemonClient, {
   connect: async (credentials) => { await nativeRpc.request.daemonConnect(credentials); },
   request: (request) => nativeRpc.request.daemonRequest(request),
   disconnect: async () => { await nativeRpc.request.daemonDisconnect({}); },
@@ -36,11 +37,10 @@ const mobileTransport = new MobileDaemonTransport(isAndroidApp, () => isLinuxDes
 const uiEventListeners = new Map<UiBridgeEventListener, (event: BridgeEvent) => void>();
 
 export function setAndroidStatusBarAppearance(light: boolean): void {
-  mobileTransport.setStatusBarAppearance(light);
+  daemonClientTransport.setStatusBarAppearance(light);
 }
 
-export function setLinuxDaemonMode(enabled: boolean): void {
-  if (!isLinuxDesktop) return;
+export function setDesktopDaemonMode(enabled: boolean): void {
   isDaemonClient = enabled;
   try {
     preferences.setItem(PREFERENCE_KEYS.desktopConnectionMode, enabled ? "daemon" : "direct");
@@ -57,12 +57,12 @@ export function setAssistantProvider(provider: AssistantProvider): void {
 
 if (!isMobileApp) new Electroview({ rpc: nativeRpc });
 
-export function connectMobileBridge(endpoint: string, token: string, fingerprint: string): Promise<void> {
-  return mobileTransport.connect(endpoint, token, fingerprint);
+export function connectDaemonBridge(endpoint: string, token: string, fingerprint: string): Promise<void> {
+  return daemonClientTransport.connect(endpoint, token, fingerprint);
 }
 
-export function disconnectMobileBridge(): void {
-  mobileTransport.disconnect();
+export function disconnectDaemonBridge(): void {
+  daemonClientTransport.disconnect();
 }
 
 export function addUiBridgeEventListener(listener: UiBridgeEventListener): void {
@@ -73,7 +73,7 @@ export function addUiBridgeEventListener(listener: UiBridgeEventListener): void 
     for (const uiEvent of normalizeBridgeEvent(event)) listener(uiEvent);
   };
   uiEventListeners.set(listener, onWireEvent);
-  if (isMobileApp) mobileTransport.addEventListener(onWireEvent);
+  if (isMobileApp) daemonClientTransport.addEventListener(onWireEvent);
   else nativeRpc.addMessageListener("event", onWireEvent);
 }
 
@@ -81,7 +81,7 @@ export function removeUiBridgeEventListener(listener: UiBridgeEventListener): vo
   const onWireEvent = uiEventListeners.get(listener);
   if (!onWireEvent) return;
   uiEventListeners.delete(listener);
-  if (isMobileApp) mobileTransport.removeEventListener(onWireEvent);
+  if (isMobileApp) daemonClientTransport.removeEventListener(onWireEvent);
   else nativeRpc.removeMessageListener("event", onWireEvent);
 }
 
@@ -98,23 +98,24 @@ export const bridgeRpc = new Proxy(nativeRpc, {
             const object = params as Record<string, unknown>;
             return { ...object, provider: object.provider ?? activeAssistantProvider };
           };
-          if (isLinuxDesktop && isDaemonClient && ["windowAction", "getGtkSettings", "getWindowFrame", "setWindowFrame", "daemonConnect", "daemonRequest", "daemonDisconnect"].includes(method)) {
+          const nativeDesktopDaemon = !isMobileApp && isDaemonClient;
+          if (nativeDesktopDaemon && ["windowAction", "getGtkSettings", "getWindowFrame", "setWindowFrame", "daemonConnect", "daemonRequest", "daemonDisconnect"].includes(method)) {
             return Reflect.get(requests, method);
           }
-          if (!isMobileApp && !(isLinuxDesktop && isDaemonClient)) {
+          if (!isMobileApp && !nativeDesktopDaemon) {
             return includeProvider && request ? (params: unknown) => request(injectProvider(params)) : request;
           }
-          return (params: unknown) => mobileTransport.request(method, injectProvider(params));
+          return (params: unknown) => daemonClientTransport.request(method, injectProvider(params));
         },
       });
     }
     if (property === "addMessageListener") {
       if (!isMobileApp) return Reflect.get(target, property, receiver);
-      return (_name: string, listener: (event: BridgeEvent) => void) => mobileTransport.addEventListener(listener);
+      return (_name: string, listener: (event: BridgeEvent) => void) => daemonClientTransport.addEventListener(listener);
     }
     if (property === "removeMessageListener") {
       if (!isMobileApp) return Reflect.get(target, property, receiver);
-      return (_name: string, listener: (event: BridgeEvent) => void) => mobileTransport.removeEventListener(listener);
+      return (_name: string, listener: (event: BridgeEvent) => void) => daemonClientTransport.removeEventListener(listener);
     }
     return Reflect.get(target, property, receiver);
   },
@@ -130,8 +131,9 @@ function readAssistantProvider(): AssistantProvider {
 
 function readDesktopDaemonMode(): boolean {
   try {
-    return preferences.getItem(PREFERENCE_KEYS.desktopConnectionMode) !== "direct";
+    const mode = preferences.getItem(PREFERENCE_KEYS.desktopConnectionMode);
+    return mode === null ? isLinuxDesktop : mode !== "direct";
   } catch {
-    return true;
+    return isLinuxDesktop;
   }
 }

@@ -3,23 +3,20 @@ import { parseOpenCodeModelId, type OpenCodeModel } from "./model-mapper.js";
 import {
   mapOpenCodeSession,
   mapOpenCodeTranscript,
-  normalizeV2Message,
   openCodeModelFromMessages,
   openCodeModelFromSession,
-  parseOpenCodeMessage,
-  parseOpenCodeSession,
   type OpenCodeMessage,
   type OpenCodeSessionInfo,
 } from "./conversation-mapper.js";
 import { OpenCodeTurnWatcher } from "./turn-watcher.js";
 import { OpenCodeHttpClient } from "./http-client.js";
 import { loadOpenCodeModelCatalog } from "./model-catalog.js";
-import { parseOpenCodeCommands, parseOpenCodeSkills } from "./resource-catalog-mapper.js";
+import { OpenCodeMessageApi } from "./message-api.js";
+import { OpenCodeResourceApi } from "./resource-api.js";
+import { OpenCodeSessionApi } from "./session-api.js";
+import { OpenCodeTurnApi } from "./turn-api.js";
 import type { OpenCodeCommand, OpenCodeSkill } from "./types.js";
 import type { AssistantEvent } from "../../../application/ports/events.js";
-
-type JsonObject = Record<string, unknown>;
-const OPENCODE_MESSAGE_LIMIT = 200;
 
 /** Adapter for OpenCode's documented HTTP server API. Credentials stay in memory. */
 export class OpenCodeProviderConnection {
@@ -28,6 +25,10 @@ export class OpenCodeProviderConnection {
   readonly modelWarning: string | undefined;
   private readonly http: OpenCodeHttpClient;
   private readonly apiVersion: OpenCodeApiVersion;
+  private readonly messages: OpenCodeMessageApi;
+  private readonly resources: OpenCodeResourceApi;
+  private readonly sessions: OpenCodeSessionApi;
+  private readonly turnApi: OpenCodeTurnApi;
   private readonly turnWatcher: OpenCodeTurnWatcher;
   private readonly pendingPrompts = new Set<string>();
   private closed = false;
@@ -36,12 +37,16 @@ export class OpenCodeProviderConnection {
     this.baseUrl = http.baseUrl;
     this.http = http;
     this.apiVersion = apiVersion;
+    this.messages = new OpenCodeMessageApi(http, apiVersion);
+    this.resources = new OpenCodeResourceApi(http, apiVersion);
+    this.sessions = new OpenCodeSessionApi(http, apiVersion, this.messages);
+    this.turnApi = new OpenCodeTurnApi(http, apiVersion, (sessionId, allPages) => this.listMessages(sessionId, allPages));
     this.models = models;
     this.modelWarning = modelWarning;
     this.turnWatcher = new OpenCodeTurnWatcher(
       apiVersion,
       (sessionId, signal) => this.listMessages(sessionId, false, signal),
-      (signal) => this.http.request("/session/status", undefined, { signal }),
+      (signal) => this.turnApi.sessionStatuses(signal),
     );
   }
 
@@ -80,161 +85,50 @@ export class OpenCodeProviderConnection {
   }
 
   async listSessions(directory?: string): Promise<OpenCodeSessionInfo[]> {
-    const value = await this.http.request(this.apiVersion === "v2" ? "/api/session" : "/session", directory ? { directory } : undefined);
-    const rows = this.apiVersion === "v2" ? dataArray(value) : value;
-    return Array.isArray(rows) ? rows.flatMap((item) => {
-      const session = parseOpenCodeSession(item);
-      return session ? [session] : [];
-    }) : [];
+    return this.sessions.list(directory);
   }
 
   async getSession(sessionId: string, signal?: AbortSignal): Promise<OpenCodeSessionInfo> {
-    const value = await this.http.request(
-      `${this.apiVersion === "v2" ? "/api/session" : "/session"}/${encodeURIComponent(sessionId)}`,
-      undefined,
-      signal ? { signal } : {},
-    );
-    const session = parseOpenCodeSession(this.apiVersion === "v2" ? unwrapData(value) : value);
-    if (!session) throw new Error("OpenCode returned an invalid session response.");
-    return session;
+    return this.sessions.get(sessionId, signal);
   }
 
   async createSession(directory: string, title?: string, model?: string): Promise<OpenCodeSessionInfo> {
-    const path = this.apiVersion === "v2" ? "/api/session" : "/session";
-    const query = this.apiVersion === "v2" ? undefined : { directory };
-    const selectedModel = model ? parseOpenCodeModelId(model) : undefined;
-    if (model && !selectedModel) throw new Error("Select a valid OpenCode model before creating a session.");
-    const body = this.apiVersion === "v2"
-      ? {
-        ...(title ? { title } : {}),
-        ...(selectedModel ? { model: { id: selectedModel.modelID, providerID: selectedModel.providerID } } : {}),
-        location: { directory },
-      }
-      : (title ? { title } : {});
-    const value = await this.http.request(path, query, {
-      method: "POST",
-      body: JSON.stringify(body),
-    });
-    const session = parseOpenCodeSession(this.apiVersion === "v2" ? unwrapData(value) : value);
-    if (!session) throw new Error("OpenCode returned an invalid session response.");
-    return session;
+    return this.sessions.create(directory, title, model);
   }
 
   async renameSession(sessionId: string, title: string): Promise<void> {
-    await this.http.request(
-      `${this.apiVersion === "v2" ? "/api/session" : "/session"}/${encodeURIComponent(sessionId)}${this.apiVersion === "v2" ? "/rename" : ""}`,
-      undefined,
-      {
-      method: this.apiVersion === "v2" ? "POST" : "PATCH",
-      body: JSON.stringify({ title }),
-      },
-    );
+    await this.sessions.rename(sessionId, title);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
     const watch = this.turnWatcher.stop(sessionId);
     try {
-      const result = await this.http.request(
-        `${this.apiVersion === "v2" ? "/api/session" : "/session"}/${encodeURIComponent(sessionId)}`,
-        undefined,
-        { method: "DELETE" },
-      );
-      if (unwrapData(result) === false) throw new Error("OpenCode reported that the session was not deleted.");
+      await this.sessions.delete(sessionId);
       this.pendingPrompts.delete(sessionId);
     } catch (error) {
-      if (await this.isSessionMissing(sessionId)) {
-        this.pendingPrompts.delete(sessionId);
-        return;
-      }
       if (watch) this.turnWatcher.resume(sessionId, watch);
       throw error;
     }
   }
 
-  private async isSessionMissing(sessionId: string): Promise<boolean> {
-    try {
-      await this.getSession(sessionId, AbortSignal.timeout(5_000));
-      return false;
-    } catch (error) {
-      return errorMessage(error).includes("OpenCode 서버 응답 오류 404");
-    }
-  }
-
   async forkSession(sessionId: string, throughMessageId?: string): Promise<OpenCodeSessionInfo> {
-    let boundaryMessageId: string | undefined;
-    if (throughMessageId) {
-      const messages = await this.listMessages(sessionId);
-      const messageIndex = messages.findIndex((message) => message.info?.id === throughMessageId);
-      if (messageIndex < 0) throw new Error("OpenCode could not find the selected message in this session.");
-      // OpenCode copies messages before messageID, so use the following message
-      // as the exclusive boundary to include the selected response.
-      boundaryMessageId = messages[messageIndex + 1]?.info?.id;
-    }
-    const value = await this.http.request(`${this.apiVersion === "v2" ? "/api/session" : "/session"}/${encodeURIComponent(sessionId)}/fork`, undefined, {
-      method: "POST",
-      body: JSON.stringify(boundaryMessageId ? { messageID: boundaryMessageId } : {}),
-    });
-    const session = parseOpenCodeSession(this.apiVersion === "v2" ? unwrapData(value) : value);
-    if (!session) throw new Error("OpenCode returned an invalid fork response.");
-    return session;
+    return this.sessions.fork(sessionId, throughMessageId);
   }
 
   async listMessages(sessionId: string, allPages = true, signal?: AbortSignal): Promise<OpenCodeMessage[]> {
-    const route = this.apiVersion === "v2" ? "/api/session" : "/session";
-    const sessionRoute = `${route}/${encodeURIComponent(sessionId)}/message`;
-    if (this.apiVersion === "v1") {
-      const rows = await this.http.request(`${sessionRoute}?limit=${OPENCODE_MESSAGE_LIMIT}`, undefined, signal ? { signal } : {});
-      return Array.isArray(rows) ? rows.flatMap((item) => {
-        const message = parseOpenCodeMessage(item);
-        return message ? [message] : [];
-      }) : [];
-    }
-
-    const messages: JsonObject[] = [];
-    const seenCursors = new Set<string>();
-    let cursor: string | undefined;
-    do {
-      const query = new URLSearchParams({ limit: String(OPENCODE_MESSAGE_LIMIT) });
-      // OpenCode v2 cursors already encode the order and reject an explicit order alongside them.
-      if (!cursor) query.set("order", allPages ? "asc" : "desc");
-      if (cursor) query.set("cursor", cursor);
-      const value = await this.http.request(`${sessionRoute}?${query}`, undefined, signal ? { signal } : {});
-      messages.push(...dataArray(value).map(asObject).filter((item): item is JsonObject => Boolean(item)));
-      const nextCursor = allPages ? firstString(asObject(asObject(value)?.cursor)?.next) : undefined;
-      if (!nextCursor || seenCursors.has(nextCursor)) break;
-      seenCursors.add(nextCursor);
-      cursor = nextCursor;
-    } while (allPages);
-
-    const orderedMessages = allPages ? messages : messages.reverse();
-    return orderedMessages.map(normalizeV2Message);
+    return this.messages.list(sessionId, allPages, signal);
   }
 
   async listSkills(directory?: string): Promise<OpenCodeSkill[]> {
-    const value = await this.http.request(
-      this.apiVersion === "v2" ? "/api/skill" : "/skill",
-      directory ? (this.apiVersion === "v2" ? { locationDirectory: directory } : { directory }) : undefined,
-    );
-    return parseOpenCodeSkills(value, this.apiVersion);
+    return this.resources.listSkills(directory);
   }
 
   async listCommands(directory?: string): Promise<OpenCodeCommand[]> {
-    const value = await this.http.request(
-      this.apiVersion === "v2" ? "/api/command" : "/command",
-      directory ? (this.apiVersion === "v2" ? { locationDirectory: directory } : { directory }) : undefined,
-    );
-    return parseOpenCodeCommands(value, this.apiVersion);
+    return this.resources.listCommands(directory);
   }
 
   async setSessionModel(sessionId: string, model: string): Promise<void> {
-    const selectedModel = parseOpenCodeModelId(model);
-    if (!selectedModel) throw new Error("Select a valid OpenCode model before sending a message.");
-    if (this.apiVersion === "v2") {
-      await this.http.request(`/api/session/${encodeURIComponent(sessionId)}/model`, undefined, {
-        method: "POST",
-        body: JSON.stringify({ model: { id: selectedModel.modelID, providerID: selectedModel.providerID } }),
-      });
-    }
+    await this.turnApi.setModel(sessionId, model);
   }
 
   async sendPrompt(
@@ -249,30 +143,10 @@ export class OpenCodeProviderConnection {
     if (this.turnWatcher.isWatching(sessionId) || this.pendingPrompts.has(sessionId)) throw new Error("OpenCode is already generating a response in this session.");
     this.pendingPrompts.add(sessionId);
     const turnId = `opencode-${crypto.randomUUID()}`;
-    const selectedModel = parseOpenCodeModelId(model);
     try {
-      if (!selectedModel) throw new Error("OpenCode 세션에 모델이 선택되지 않았습니다. 모델을 선택한 뒤 메시지를 보내세요.");
-      const messages = await this.listMessages(sessionId, false);
-      const baseline = new Set(messages.map((message) => message.info?.id).filter((id): id is string => typeof id === "string"));
-      if (this.apiVersion === "v2") {
-        if (selectedModel) await this.setSessionModel(sessionId, model);
-        await this.http.request(`/api/session/${encodeURIComponent(sessionId)}/${command ? "command" : "prompt"}`, undefined, {
-          method: "POST",
-          body: JSON.stringify(command ? { command: command.name, arguments: command.arguments } : { text }),
-        });
-      } else {
-        await this.http.request(`/session/${encodeURIComponent(sessionId)}/${command ? "command" : "prompt_async"}`, undefined, {
-          method: "POST",
-          body: JSON.stringify(command ? { command: command.name, arguments: command.arguments } : {
-            parts: [{ type: "text", text }],
-            ...(selectedModel ? { model: selectedModel } : {}),
-          }),
-        });
-      }
+      const baseline = await this.turnApi.submit(sessionId, text, model, command);
       this.turnWatcher.start(target, sessionId, turnId, baseline, publish);
       return turnId;
-    } catch (error) {
-      throw error;
     } finally {
       this.pendingPrompts.delete(sessionId);
     }
@@ -283,7 +157,7 @@ export class OpenCodeProviderConnection {
     sessionId: string,
     publish: (event: AssistantEvent) => void,
   ): Promise<void> {
-    await this.http.request(`${this.apiVersion === "v2" ? "/api/session" : "/session"}/${encodeURIComponent(sessionId)}/${this.apiVersion === "v2" ? "interrupt" : "abort"}`, undefined, { method: "POST" });
+    await this.turnApi.interrupt(sessionId);
     const watch = this.turnWatcher.stop(sessionId);
     if (watch) {
       publish({ target, threadId: sessionId, provider: "opencode", type: "turnCompleted", turnId: watch.turnId, status: "interrupted" });
@@ -295,26 +169,4 @@ export class OpenCodeProviderConnection {
     this.turnWatcher.close();
   }
 
-}
-
-function asObject(value: unknown): JsonObject | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as JsonObject : undefined;
-}
-
-function firstString(...values: unknown[]): string | undefined {
-  return values.find((value): value is string => typeof value === "string" && value.length > 0);
-}
-
-function unwrapData(value: unknown): unknown {
-  const record = asObject(value);
-  return record && "data" in record ? record.data : value;
-}
-
-function dataArray(value: unknown): unknown[] {
-  const data = asObject(value)?.data;
-  return Array.isArray(data) ? data : [];
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -1,4 +1,6 @@
-import { serializeAssistantEvent, serializeTerminalEvent, type BridgeEvent } from "../interfaces/contracts/daemon-events.js";
+import { serializeAssistantEvent } from "../interfaces/contracts/daemon-assistant-event-serializer.js";
+import { serializeTerminalEvent } from "../interfaces/contracts/daemon-terminal-event-serializer.js";
+import type { BridgeEvent } from "../interfaces/contracts/daemon-events.js";
 import type { AssistantEvent } from "../application/ports/events.js";
 import { createDaemonRequestDispatcher } from "../interfaces/daemon/dispatcher.js";
 import { createDaemonRequestHandlers } from "../interfaces/daemon/handlers.js";

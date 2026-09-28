@@ -4,7 +4,7 @@ import { dispatchDaemonRequest, subscribeDaemonEvents } from "../../../../src/co
 import { RoutedWorkspaceFileAdapter } from "../../../../src/adapters/workspace/files.js";
 import { TerminalUseCases } from "../../../../src/application/use-cases/terminal.js";
 import { WorkspaceFileUseCases } from "../../../../src/application/use-cases/workspace-files.js";
-import { serializeTerminalEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
+import { serializeTerminalEvent } from "../../../../src/interfaces/contracts/daemon-terminal-event-serializer.js";
 import type { DaemonApiMethod, DaemonApiRequestMap, DaemonApiResponseMap } from "../../../../src/interfaces/contracts/daemon-api.js";
 import type { BridgeEvent, GtkSettings, HiveBridgeSchema } from "../shared/bridge.js";
 import { PinnedDaemonClient, type DaemonCredentials } from "./daemon-client.js";

@@ -1,4 +1,5 @@
 import type { DaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-api.js";
+import { createDaemonRequestPacket, type DaemonResponsePacket } from "../../../../src/interfaces/contracts/daemon-transport.js";
 
 const REQUEST_TIMEOUT_MS = 60_000;
 
@@ -22,7 +23,7 @@ export class MobileDaemonRpcChannel {
       }, REQUEST_TIMEOUT_MS);
       this.pendingRequests.set(id, { resolve, reject, timeout });
       try {
-        void Promise.resolve(send(JSON.stringify({ type: "request", id, ...request }))).catch((error: unknown) => {
+        void Promise.resolve(send(JSON.stringify(createDaemonRequestPacket(id, request)))).catch((error: unknown) => {
           this.rejectRequest(id, asError(error));
         });
       } catch (error) {
@@ -31,15 +32,13 @@ export class MobileDaemonRpcChannel {
     });
   }
 
-  receivePacket(packet: Record<string, unknown>): boolean {
-    if (packet.type !== "response" || (typeof packet.id !== "number" && typeof packet.id !== "string")) return false;
+  receivePacket(packet: DaemonResponsePacket): void {
     const id = Number(packet.id);
     const pending = Number.isSafeInteger(id) ? this.pendingRequests.get(id) : undefined;
-    if (!pending) return true;
+    if (!pending) return;
     this.finishRequest(id);
     if (typeof packet.error === "string") pending.reject(new Error(packet.error));
     else pending.resolve(packet.result);
-    return true;
   }
 
   rejectAll(message: string): void {

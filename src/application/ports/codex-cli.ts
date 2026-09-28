@@ -10,10 +10,13 @@ export type CodexCliThreadRecord = {
   updatedAt?: string | number;
 };
 
+export type CodexArchiveJsonValue = null | boolean | number | string | CodexArchiveJsonValue[] | CodexArchiveJsonObject;
+export type CodexArchiveJsonObject = { [key: string]: CodexArchiveJsonValue };
+
 export type CodexArchiveSnapshot = {
   targetLabel: string;
   cwd: string | null;
-  threadRead: Record<string, unknown>;
+  threadRead: CodexArchiveJsonObject;
 };
 
 export type ImportedCodexArchive = {
@@ -26,7 +29,7 @@ export type ImportedCodexArchive = {
     cwd: string | null;
   };
   /** Opaque app-server history retained so an imported archive stays lossless. */
-  threadRead: Record<string, unknown>;
+  threadRead: CodexArchiveJsonObject;
 };
 
 export interface CodexCliPort {

@@ -1,7 +1,10 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { TLSSocket } from "node:tls";
 import WebSocket, { type RawData } from "ws";
+import { normalizeDaemonCredentials } from "../../../../src/adapters/transport/daemon-credentials.js";
+import { DaemonReconnectPolicy } from "../../../../src/adapters/transport/daemon-reconnect-policy.js";
 import { parseBridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
+import { parseDaemonServerPacket } from "../../../../src/interfaces/contracts/daemon-transport.js";
 import type { BridgeEvent } from "../shared/bridge.js";
 import { BunDaemonRpcChannel } from "./daemon-rpc.js";
 
@@ -24,9 +27,9 @@ export class PinnedDaemonClient {
   private manuallyClosed = false;
   private pingTimer?: ReturnType<typeof setInterval>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
-  private reconnectAttempt = 0;
   private reconnecting = false;
   private credentials?: DaemonCredentials;
+  private readonly reconnectPolicy = new DaemonReconnectPolicy();
   private readonly rpc: BunDaemonRpcChannel;
 
   constructor(private readonly onEvent: (event: BridgeEvent) => void) {
@@ -50,12 +53,12 @@ export class PinnedDaemonClient {
 
     let normalized: DaemonCredentials;
     try {
-      normalized = normalizeCredentials(credentials);
+      normalized = normalizeDaemonCredentials(credentials);
     } catch (error) {
       return Promise.reject(error instanceof Error ? error : new Error(String(error)));
     }
     this.credentials = normalized;
-    this.reconnectAttempt = 0;
+    this.reconnectPolicy.reset();
     this.clearReconnectTimer();
     this.manuallyClosed = false;
     return this.openConnection(normalized);
@@ -104,14 +107,14 @@ export class PinnedDaemonClient {
       });
 
       socket.on("message", (raw: RawData) => {
-        let packet: Record<string, unknown>;
+        let packet: ReturnType<typeof parseDaemonServerPacket>;
         try {
           const parsed: unknown = JSON.parse(rawMessage(raw));
-          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return;
-          packet = parsed as Record<string, unknown>;
+          packet = parseDaemonServerPacket(parsed);
         } catch {
           return;
         }
+        if (!packet) return;
 
         if (packet.type === "authenticated") {
           this.connected = true;
@@ -122,7 +125,7 @@ export class PinnedDaemonClient {
           if (event) this.onEvent(event);
         } else if (packet.type === "response") {
           this.rpc.receiveResponse(packet);
-        } else if (packet.type === "error" && typeof packet.error === "string") {
+        } else if (packet.type === "error") {
           fail(new Error(packet.error));
         }
       });
@@ -179,8 +182,7 @@ export class PinnedDaemonClient {
 
   private scheduleReconnect(): void {
     if (this.manuallyClosed || !this.credentials || this.reconnecting || this.reconnectTimer) return;
-    const delay = Math.min(30_000, 1_000 * 2 ** Math.min(this.reconnectAttempt, 5));
-    this.reconnectAttempt += 1;
+    const delay = this.reconnectPolicy.nextDelayMs();
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
       const credentials = this.credentials;
@@ -188,13 +190,13 @@ export class PinnedDaemonClient {
       this.reconnecting = true;
       void this.openConnection(credentials).then(() => {
         this.reconnecting = false;
-        this.reconnectAttempt = 0;
+        this.reconnectPolicy.reset();
         this.onEvent({ target: "", threadId: "", method: "hive/transport/reconnected", params: {} });
       }).catch((error: unknown) => {
         this.reconnecting = false;
         if (this.manuallyClosed || this.credentials !== credentials) return;
         const message = error instanceof Error ? error.message : String(error);
-        if (/페어링 토큰|인증서 지문.*일치하지 않습니다|fingerprint.*(mismatch|does not match)/i.test(message)) {
+        if (this.reconnectPolicy.isCredentialFailure(message)) {
           this.credentials = undefined;
           this.onEvent({ target: "", threadId: "", method: "hive/transport/failed", params: { message } });
           return;
@@ -210,27 +212,6 @@ export class PinnedDaemonClient {
     this.reconnectTimer = undefined;
   }
 
-}
-
-function normalizeCredentials(credentials: DaemonCredentials): DaemonCredentials & { fingerprint: string } {
-  let url: URL;
-  try {
-    url = new URL(credentials.endpoint.trim());
-  } catch {
-    throw new Error("데몬 주소를 wss:// 형식으로 입력하세요.");
-  }
-  if (url.protocol !== "wss:") throw new Error("데몬 연결에는 암호화된 wss:// 주소가 필요합니다.");
-  if (url.pathname === "/" || url.pathname === "") url.pathname = "/rpc";
-  if (url.pathname !== "/rpc" || url.search || url.hash || url.username || url.password || !url.hostname) {
-    throw new Error("데몬 주소에는 /rpc 경로만 사용할 수 있습니다.");
-  }
-  const fingerprint = credentials.fingerprint.replace(/[^a-fA-F0-9]/g, "").toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(fingerprint)) {
-    throw new Error("데몬이 출력한 SHA-256 인증서 지문 64자리를 입력하세요.");
-  }
-  const token = credentials.token.trim();
-  if (!token) throw new Error("데몬 페어링 토큰을 입력하세요.");
-  return { endpoint: url.toString(), token, fingerprint };
 }
 
 function rawMessage(raw: RawData): string {

@@ -13,6 +13,7 @@ type WindowChrome = Pick<ReturnType<typeof useWindowControls>,
   | "topbarGtkLeftDecorations"
   | "topbarGtkRightDecorations"
   | "renderGtkDecorations"
+  | "renderWindowsControls"
 >;
 
 type SidebarProps = ComponentProps<typeof WorkspaceSidebar>;
@@ -25,6 +26,7 @@ type WorkspaceFrameProps = {
     mobileSidebarOpen: boolean;
     desktopSidebarCollapsed: boolean;
     isMobileApp: boolean;
+    isWindowsDesktop: boolean;
     isWideLayout: boolean;
     isLinuxDesktop: boolean;
     filePanelOpen: boolean;
@@ -70,7 +72,7 @@ export function WorkspaceFrame({ layout, actions, sidebar, windowChrome, filesPa
     isWideLayout: layout.isWideLayout,
   });
 
-  return <div ref={appShellRef} className={`app-shell page-${layout.activePage} ${settingsPageClass} ${layout.isMobileApp ? "mobile-app" : ""} ${layout.isLinuxDesktop ? "linux-desktop" : ""} ${layout.desktopSidebarCollapsed ? "desktop-sidebar-collapsed" : ""}`}>
+  return <div ref={appShellRef} className={`app-shell page-${layout.activePage} ${settingsPageClass} ${layout.isMobileApp ? "mobile-app" : ""} ${layout.isLinuxDesktop ? "linux-desktop" : ""} ${layout.isWindowsDesktop ? "windows-desktop" : ""} ${layout.desktopSidebarCollapsed ? "desktop-sidebar-collapsed" : ""}`}>
     {layout.isMobileApp && !layout.isWideLayout && <button className={`mobile-drawer-backdrop ${narrowMobileDrawerOpen ? "is-open" : ""}`} onClick={actions.dismissMobilePanels} aria-label="패널 닫기" aria-hidden={!narrowMobileDrawerOpen} inert={!narrowMobileDrawerOpen} />}
     <WorkspaceSidebar {...sidebar} asideRef={sidebarRef} layout={{ ...sidebar.layout, sidebarA11yHidden }} />
 
@@ -87,6 +89,7 @@ export function WorkspaceFrame({ layout, actions, sidebar, windowChrome, filesPa
         </div>
         <div className="topbar-actions electrobun-webkit-app-region-no-drag">
           {layout.activePage === "sessions" && <button className={`icon-button file-panel-toggle ${layout.filePanelOpen ? "active" : ""}`} type="button" aria-label={layout.filePanelOpen ? "파일 패널 닫기" : "파일 패널 열기"} aria-pressed={layout.filePanelOpen} title={layout.filePanelOpen ? "파일 패널 닫기" : "파일 패널 열기"} onClick={actions.toggleFilePanel}><Icon name="panel-right" /></button>}
+          {layout.isWindowsDesktop && <div className="window-controls windows-window-controls" aria-label="창 제어">{windowChrome.renderWindowsControls()}</div>}
           {layout.isLinuxDesktop && windowChrome.topbarGtkRightDecorations.length > 0 && <div className="window-controls window-controls-right" style={windowChrome.gtkControlStyle} aria-label="오른쪽 창 제어">
             {windowChrome.renderGtkDecorations(windowChrome.topbarGtkRightDecorations, "right")}
           </div>}

@@ -1,11 +1,11 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { connectMobileBridge, disconnectMobileBridge, preferences } from "./bridgeClient";
+import { connectDaemonBridge, disconnectDaemonBridge, preferences } from "./bridgeClient";
 import { PREFERENCE_KEYS } from "../shared/preferences";
 
 type SavedPairing = { endpoint: string; token: string; fingerprint: string };
 
-export function MobilePairingGate({ children, onUseDirectConnection }: {
-  children: (changeDesktop: () => void) => ReactNode;
+export function DaemonPairingGate({ children, onUseDirectConnection }: {
+  children: (changePairing: () => void) => ReactNode;
   onUseDirectConnection?: () => void;
 }) {
   const saved = readSavedPairing();
@@ -20,7 +20,7 @@ export function MobilePairingGate({ children, onUseDirectConnection }: {
     if (!saved) return;
     let current = true;
     setConnecting(true);
-    void connectMobileBridge(saved.endpoint, saved.token, saved.fingerprint)
+    void connectDaemonBridge(saved.endpoint, saved.token, saved.fingerprint)
       .then(() => { if (current) setConnected(true); })
       .catch((reason: unknown) => { if (current) setError(errorMessage(reason)); })
       .finally(() => { if (current) setConnecting(false); });
@@ -32,9 +32,9 @@ export function MobilePairingGate({ children, onUseDirectConnection }: {
     setError("");
     setConnecting(true);
     try {
-      await connectMobileBridge(endpoint, token, fingerprint);
+      await connectDaemonBridge(endpoint, token, fingerprint);
       const pairing = { endpoint: normalizedEndpoint(endpoint), token: token.trim(), fingerprint: normalizeFingerprint(fingerprint) };
-      preferences.setItem(PREFERENCE_KEYS.mobilePairing, JSON.stringify(pairing));
+      preferences.setItem(PREFERENCE_KEYS.daemonPairing, JSON.stringify(pairing));
       setEndpoint(pairing.endpoint);
       setToken(pairing.token);
       setFingerprint(pairing.fingerprint);
@@ -46,14 +46,14 @@ export function MobilePairingGate({ children, onUseDirectConnection }: {
     }
   };
 
-  const changeDaemon = () => {
-    disconnectMobileBridge();
-    preferences.removeItem(PREFERENCE_KEYS.mobilePairing);
+  const changePairing = () => {
+    disconnectDaemonBridge();
+    preferences.removeItem(PREFERENCE_KEYS.daemonPairing);
     setConnected(false);
     setError("");
   };
 
-  if (connected) return <>{children(changeDaemon)}</>;
+  if (connected) return <>{children(changePairing)}</>;
   return <main className="mobile-pairing-screen">
     <div className="mobile-pairing-card">
       <div className="mobile-pairing-mark">H</div>
@@ -78,7 +78,7 @@ export function MobilePairingGate({ children, onUseDirectConnection }: {
 
 function readSavedPairing(): SavedPairing | undefined {
   try {
-    const saved = preferences.getItem(PREFERENCE_KEYS.mobilePairing);
+    const saved = preferences.getItem(PREFERENCE_KEYS.daemonPairing);
     if (!saved) return undefined;
     const value: unknown = JSON.parse(saved);
     if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;

@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import type { MobileDaemonPeer } from "../../application/ports/mobile-daemon-peer.js";
 import { isDaemonApiMethod } from "../contracts/daemon-api.js";
+import { parseDaemonClientPacket } from "../contracts/daemon-transport.js";
 import type { DaemonRequestDispatcher } from "./dispatcher.js";
 
 const AUTH_TIMEOUT_MS = 10_000;
@@ -23,7 +24,8 @@ export function handleMobileDaemonPeer(
       let message: Record<string, unknown>;
       try { message = parseObject(text); }
       catch { peer.close(1008, "Invalid authentication message"); return; }
-      if (message.type !== "authenticate" || !secureCompare(message.token, token)) {
+      const packet = parseDaemonClientPacket(message);
+      if (packet?.type !== "authenticate" || !secureCompare(packet.token, token)) {
         peer.close(1008, "Authentication failed");
         return;
       }
@@ -37,21 +39,21 @@ export function handleMobileDaemonPeer(
     let message: Record<string, unknown>;
     try { message = parseObject(text); }
     catch { peer.send({ type: "error", error: "Invalid request message" }); return; }
-    if (message.type !== "request" || (typeof message.id !== "number" && typeof message.id !== "string") ||
-        typeof message.method !== "string" || !isDaemonApiMethod(message.method)) {
+    const packet = parseDaemonClientPacket(message);
+    if (packet?.type !== "request" || !isDaemonApiMethod(packet.method)) {
       peer.send({ type: "error", error: "Unsupported mobile daemon request" });
       return;
     }
     if (activeRequests >= MAX_ACTIVE_REQUESTS) {
-      peer.send({ type: "response", id: message.id, error: "Too many active requests" });
+      peer.send({ type: "response", id: packet.id, error: "Too many active requests" });
       return;
     }
     activeRequests += 1;
     try {
-      const result = await dispatch(message.method, message.params);
-      peer.send({ type: "response", id: message.id, result });
+      const result = await dispatch(packet.method, packet.params);
+      peer.send({ type: "response", id: packet.id, result });
     } catch (error) {
-      peer.send({ type: "response", id: message.id, error: errorMessage(error) });
+      peer.send({ type: "response", id: packet.id, error: errorMessage(error) });
     } finally {
       activeRequests -= 1;
     }

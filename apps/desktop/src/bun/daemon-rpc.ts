@@ -1,5 +1,6 @@
 import { parseDaemonApiRequest, type DaemonApiMethod } from "../../../../src/interfaces/contracts/daemon-api.js";
 import { parseDaemonApiResponse } from "../../../../src/interfaces/contracts/daemon-response.js";
+import { createDaemonRequestPacket, type DaemonResponsePacket } from "../../../../src/interfaces/contracts/daemon-transport.js";
 
 const REQUEST_TIMEOUT_MS = 120_000;
 
@@ -41,7 +42,7 @@ export class BunDaemonRpcChannel {
       }, REQUEST_TIMEOUT_MS);
       this.pending.set(id, { method: request.method, resolve, reject, timeout });
       try {
-        this.transport.send(JSON.stringify({ type: "request", id, ...request }), (error) => {
+        this.transport.send(JSON.stringify(createDaemonRequestPacket(id, request)), (error) => {
           if (error) this.rejectRequest(id, error);
         });
       } catch (error) {
@@ -50,11 +51,10 @@ export class BunDaemonRpcChannel {
     });
   }
 
-  receiveResponse(packet: Record<string, unknown>): boolean {
-    if (packet.type !== "response" || (typeof packet.id !== "number" && typeof packet.id !== "string")) return false;
+  receiveResponse(packet: DaemonResponsePacket): void {
     const id = Number(packet.id);
     const pending = this.pending.get(id);
-    if (!pending) return true;
+    if (!pending) return;
     this.finishRequest(id);
     if (typeof packet.error === "string") pending.reject(new Error(packet.error));
     else {
@@ -64,7 +64,6 @@ export class BunDaemonRpcChannel {
         pending.reject(asError(error));
       }
     }
-    return true;
   }
 
   rejectAll(message: string): void {

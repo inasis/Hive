@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./ui/App";
-import { isDaemonClient, isLinuxDesktop, isMobileApp, setLinuxDaemonMode } from "./ui/bridgeClient";
-import { MobilePairingGate } from "./ui/MobilePairing";
+import { disconnectDaemonBridge, isDaemonClient, isMobileApp, setDesktopDaemonMode } from "./ui/bridgeClient";
+import { DaemonPairingGate } from "./ui/DaemonPairingGate";
 import "@xterm/xterm/css/xterm.css";
 import "./ui/styles.css";
 
@@ -12,24 +12,22 @@ if (!root) throw new Error("Root element not found");
 function HiveRoot() {
   const [daemonMode, setDaemonMode] = useState(isDaemonClient);
   const useDaemon = () => {
-    setLinuxDaemonMode(true);
+    setDesktopDaemonMode(true);
     setDaemonMode(true);
   };
   const useDirect = () => {
-    setLinuxDaemonMode(false);
+    disconnectDaemonBridge();
+    setDesktopDaemonMode(false);
     setDaemonMode(false);
   };
 
   if (isMobileApp) {
-    return <MobilePairingGate>{(changeDesktop) => <App onMobileDisconnect={changeDesktop} />}</MobilePairingGate>;
+    return <DaemonPairingGate>{(changePairing) => <App onChangeDaemonSettings={changePairing} />}</DaemonPairingGate>;
   }
-  if (isLinuxDesktop && daemonMode) {
-    return <MobilePairingGate onUseDirectConnection={useDirect}>{(changeDesktop) => <App onMobileDisconnect={changeDesktop} onUseDirectConnection={useDirect} />}</MobilePairingGate>;
+  if (daemonMode) {
+    return <DaemonPairingGate onUseDirectConnection={useDirect}>{(changePairing) => <App onChangeDaemonSettings={changePairing} onUseDirectConnection={useDirect} />}</DaemonPairingGate>;
   }
-  if (isLinuxDesktop) {
-    return <App onUseDaemonConnection={useDaemon} />;
-  }
-  return <App />;
+  return <App onUseDaemonConnection={useDaemon} />;
 }
 
 createRoot(root).render(

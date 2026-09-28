@@ -2,6 +2,7 @@ import type { CodexArchiveSnapshot, CodexCliPort, CodexCliThreadRecord } from ".
 import { assertSshTarget } from "../../transport/workspace-target.js";
 import { parseHiveRelayTarget } from "../../transport/relay-target.js";
 import { CodexAppServerApi, type CodexThread } from "./app-server.js";
+import { toCodexArchiveJsonObject } from "./archive-mapper.js";
 
 /** Stateless Codex app-server operations used by the standalone CLI. */
 export class CodexCliAdapter implements CodexCliPort {
@@ -28,7 +29,7 @@ export class CodexCliAdapter implements CodexCliPort {
       return {
         targetLabel: archiveTargetLabel(target),
         cwd: typeof thread.cwd === "string" ? thread.cwd : null,
-        threadRead,
+        threadRead: toCodexArchiveJsonObject(threadRead),
       };
     } finally {
       await api.close();

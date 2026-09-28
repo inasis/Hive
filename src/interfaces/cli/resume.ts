@@ -10,9 +10,9 @@ import {
   renderQuestionPrompt,
   renderSessionHeader,
   renderSkillCatalog,
-  sanitizeTerminalChunk,
   renderTurnComplete,
 } from "./terminal-ui.js";
+import { sanitizeTerminalChunk } from "./terminal-text.js";
 
 type Ask = (prompt: string) => Promise<string>;
 type SkillInvocation = { selector: string; request: string };

@@ -1,6 +1,8 @@
 import type { AssistantCommand, ReasoningEffort, TranscriptEntry } from "../../../../../src/domain/assistant.js";
 import type { AssistantProvider } from "../../../../../src/domain/provider-catalog.js";
 import type { BridgeEvent } from "../../shared/bridge";
+import { asRecord, displayValue, stringValue } from "./bridge-event-values.js";
+import { mapTranscriptItemCompleted, mapTranscriptItemStarted } from "./bridge-transcript-adapter.js";
 
 type EventContext = { target: string; threadId: string; provider?: AssistantProvider };
 
@@ -100,10 +102,14 @@ export function normalizeBridgeEvent(event: BridgeEvent): UiBridgeEvent[] {
       return [{ ...context, type: "threadSettingsUpdated", settings: threadSettings(params.threadSettings) }];
     case "thread/commands/updated":
       return [{ ...context, type: "commandsUpdated", commands: commands(params.commands) }];
-    case "item/started":
-      return transcriptItemStarted(context, asRecord(params.item) ?? {});
-    case "item/completed":
-      return transcriptItemCompleted(context, asRecord(params.item) ?? {}, params);
+    case "item/started": {
+      const update = mapTranscriptItemStarted(params.item);
+      return update ? [{ ...context, ...update }] : [];
+    }
+    case "item/completed": {
+      const update = mapTranscriptItemCompleted(params.item, params);
+      return update ? [{ ...context, ...update }] : [];
+    }
     case "warning": {
       const message = stringValue(params.message);
       return message ? [{ ...context, type: "warning", message }] : [];
@@ -178,92 +184,6 @@ function commands(value: unknown): UiCommand[] {
   });
 }
 
-function transcriptItemStarted(context: EventContext, item: Record<string, unknown>): UiBridgeEvent[] {
-  const id = stringValue(item.id) ?? `item-${Date.now()}`;
-  if (item.type === "commandExecution") {
-    return [{ ...context, type: "transcriptEntriesUpdated", entries: [{
-      id, role: "tool", text: "실행 중", toolType: "commandExecution", command: displayValue(item.command), output: "", status: "inProgress",
-    }] }];
-  }
-  if (item.type === "fileChange") {
-    return [{ ...context, type: "transcriptEntriesUpdated", entries: [{ id, role: "change", text: "파일 변경 준비 중", status: "inProgress" }] }];
-  }
-  if (item.type === "webSearch") return webSearchEvent(context, item, id, "inProgress");
-  return [];
-}
-
-function transcriptItemCompleted(context: EventContext, item: Record<string, unknown>, params: Record<string, unknown>): UiBridgeEvent[] {
-  const id = stringValue(item.id);
-  if (!id) return [];
-  if (item.type === "commandExecution") {
-    return [{ ...context, type: "transcriptEntriesUpdated", entries: [{
-      id,
-      role: "tool",
-      text: stringValue(item.status) ?? "완료",
-      toolType: "commandExecution",
-      command: displayValue(item.command),
-      output: stringValue(item.aggregatedOutput) ?? stringValue(item.output) ?? "",
-      status: stringValue(item.status) ?? "completed",
-    }] }];
-  }
-  if (item.type === "fileChange") {
-    const changes = Array.isArray(item.changes) ? item.changes : [];
-    const summary = changes.map((change) => stringValue(asRecord(change)?.path)).filter((path): path is string => Boolean(path)).join("\n") || "변경된 파일";
-    return [{ ...context, type: "transcriptEntriesUpdated", entries: [{ id, role: "change", text: summary, status: stringValue(item.status) ?? "completed" }] }];
-  }
-  if (item.type === "webSearch") return webSearchEvent(context, item, id, stringValue(item.status) ?? "completed");
-  if (item.type === "agentMessage") {
-    const text = stringValue(item.text) ?? contentText(item.content);
-    if (!text) return [];
-    return [{
-      ...context,
-      type: "assistantMessageCompleted",
-      turnId: stringValue(params.turnId) ?? "turn",
-      messageId: id,
-      text,
-    }];
-  }
-  return [];
-}
-
-function webSearchEvent(context: EventContext, item: Record<string, unknown>, id: string, status: string): UiBridgeEvent[] {
-  const action = asRecord(item.action);
-  const queries = Array.isArray(action?.queries)
-    ? action.queries.flatMap((query) => typeof query === "string" && query.trim() ? [query.trim()] : [])
-    : [];
-  const searchQueries = queries.length ? queries : [stringValue(action?.query) ?? stringValue(item.query) ?? ""];
-  const entries: TranscriptEntry[] = searchQueries.map((query, index) => ({
-    id: searchQueries.length > 1 ? `${id}:query:${index + 1}` : id,
-    role: "tool",
-    text: "WebSearch",
-    toolType: "webSearch",
-    command: query || "검색 준비 중",
-    output: stringValue(item.result) ?? stringValue(item.content) ?? "",
-    status,
-  }));
-  return [{ ...context, type: "transcriptEntriesUpdated", entries, replaceIdPrefix: id }];
-}
-
-function contentText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content.map((part) => typeof part === "string" ? part : stringValue(asRecord(part)?.text) ?? "").filter(Boolean).join("\n");
-}
-
 function nestedString(value: unknown, key: string): string | undefined {
   return stringValue(asRecord(value)?.[key]);
-}
-
-function displayValue(value: unknown): string {
-  if (typeof value === "string" && value.trim()) return value;
-  if (Array.isArray(value)) return value.map((part) => String(part)).join(" ");
-  return "(unavailable)";
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
 }

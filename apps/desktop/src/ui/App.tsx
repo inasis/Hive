@@ -37,11 +37,11 @@ import { useResponseFork } from "./features/sessions/useResponseFork";
 import { useSideChatCreation } from "./features/sessions/useSideChatCreation";
 import { useSessionForkState } from "./features/sessions/useSessionForkState";
 import { useSessionSettings } from "./features/sessions/useSessionSettings";
-import { isDaemonClient, isLinuxDesktop, isMobileApp, setAssistantProvider as persistAssistantProvider } from "./bridgeClient";
+import { isDaemonClient, isLinuxDesktop, isMobileApp, isWindowsDesktop, setAssistantProvider as persistAssistantProvider } from "./bridgeClient";
 import { LOCAL_WORKSPACE_TARGET } from "../shared/bridge";
 
-export function App({ onMobileDisconnect, onUseDirectConnection, onUseDaemonConnection }: {
-  onMobileDisconnect?: () => void;
+export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemonConnection }: {
+  onChangeDaemonSettings?: () => void;
   onUseDirectConnection?: () => void;
   onUseDaemonConnection?: () => void;
 } = {}) {
@@ -218,8 +218,10 @@ export function App({ onMobileDisconnect, onUseDirectConnection, onUseDaemonConn
     topbarGtkLeftDecorations,
     topbarGtkRightDecorations,
     renderGtkDecorations,
+    renderWindowsControls,
   } = useWindowControls({
     isLinuxDesktop,
+    isWindowsDesktop,
     desktopSidebarCollapsed,
     onActivePage: (page) => setActivePage(page),
     onOpenConnectionSettings: () => openSettings("connection"),
@@ -761,7 +763,7 @@ export function App({ onMobileDisconnect, onUseDirectConnection, onUseDaemonConn
 
   return (
     <WorkspaceFrame
-      layout={{ activePage, settingsSection, activeTitle, mobileSidebarOpen, desktopSidebarCollapsed, isMobileApp, isWideLayout, isLinuxDesktop, filePanelOpen, filePanelInitialized }}
+            layout={{ activePage, settingsSection, activeTitle, mobileSidebarOpen, desktopSidebarCollapsed, isMobileApp, isWindowsDesktop, isWideLayout, isLinuxDesktop, filePanelOpen, filePanelInitialized }}
       actions={{
         toggleSidebar,
         dismissMobilePanels: () => { setMobileSidebarOpen(false); setFilePanelOpen(false); },
@@ -792,7 +794,7 @@ export function App({ onMobileDisconnect, onUseDirectConnection, onUseDaemonConn
           closeMobileSidebar: () => setMobileSidebarOpen(false),
         },
       }}
-      windowChrome={{ gtkSettings, gtkTopbarStyle, gtkControlStyle, topbarGtkLeftDecorations, topbarGtkRightDecorations, renderGtkDecorations }}
+      windowChrome={{ gtkSettings, gtkTopbarStyle, gtkControlStyle, topbarGtkLeftDecorations, topbarGtkRightDecorations, renderGtkDecorations, renderWindowsControls }}
       filesPanel={{
         ref: filesPanelRef,
         panel: { target: connectedTarget, cwd: activeCwd, openFileRequest: workspaceFileOpenRequest, onOpenFileRequestHandled: handleWorkspaceFileOpenHandled, onOpenFile: openWorkspaceFileTab },
@@ -918,7 +920,7 @@ export function App({ onMobileDisconnect, onUseDirectConnection, onUseDaemonConn
               else void connect();
             },
             onDisconnect: () => void disconnect(),
-            onMobileDisconnect,
+            onChangeDaemonSettings,
             onUseDirectConnection,
             onUseDaemonConnection,
           }}
