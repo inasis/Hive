@@ -1,6 +1,10 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { TLSSocket } from "node:tls";
 import WebSocket, { type RawData } from "ws";
+import { parseBridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
+import { parseDaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-api.js";
+import { parseDaemonApiResponse } from "../../../../src/interfaces/contracts/daemon-response.js";
+import type { DaemonApiMethod } from "../../../../src/interfaces/contracts/daemon-api.js";
 import type { BridgeEvent } from "../shared/bridge.js";
 
 const MAX_DAEMON_MESSAGE_BYTES = 16 * 1024 * 1024;
@@ -13,6 +17,7 @@ export type DaemonCredentials = {
 };
 
 type PendingRequest = {
+  method: DaemonApiMethod;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
@@ -112,8 +117,8 @@ export class PinnedDaemonClient {
           this.startPing(socket);
           settle();
         } else if (packet.type === "event") {
-          const event = packet.event;
-          if (isBridgeEvent(event)) this.onEvent(event);
+          const event = parseBridgeEvent(packet.event);
+          if (event) this.onEvent(event);
         } else if (packet.type === "response" && (typeof packet.id === "number" || typeof packet.id === "string")) {
           const id = Number(packet.id);
           const pending = this.pending.get(id);
@@ -121,7 +126,13 @@ export class PinnedDaemonClient {
           this.pending.delete(id);
           clearTimeout(pending.timeout);
           if (typeof packet.error === "string") pending.reject(new Error(packet.error));
-          else pending.resolve(packet.result);
+          else {
+            try {
+              pending.resolve(parseDaemonApiResponse(pending.method, packet.result));
+            } catch (error) {
+              pending.reject(error instanceof Error ? error : new Error(String(error)));
+            }
+          }
         } else if (packet.type === "error" && typeof packet.error === "string") {
           fail(new Error(packet.error));
         }
@@ -148,6 +159,12 @@ export class PinnedDaemonClient {
   }
 
   request(method: string, params: unknown): Promise<unknown> {
+    let request;
+    try {
+      request = parseDaemonApiRequest(method, params);
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
     const socket = this.socket;
     if (!this.connected || !socket || socket.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error("Hive 데몬 연결이 끊어졌습니다. 연결 설정을 확인하세요."));
@@ -159,8 +176,8 @@ export class PinnedDaemonClient {
         this.pending.delete(id);
         reject(new Error("Hive 데몬 응답 시간이 초과되었습니다."));
       }, REQUEST_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, timeout });
-      socket.send(JSON.stringify({ type: "request", id, method, params }), (error) => {
+      this.pending.set(id, { method: request.method, resolve, reject, timeout });
+      socket.send(JSON.stringify({ type: "request", id, ...request }), (error) => {
         if (!error) return;
         const pending = this.pending.get(id);
         if (!pending) return;
@@ -264,12 +281,6 @@ function rawMessage(raw: RawData): string {
   if (typeof raw === "string") return raw;
   if (Array.isArray(raw)) return Buffer.concat(raw).toString("utf8");
   return Buffer.from(raw).toString("utf8");
-}
-
-function isBridgeEvent(value: unknown): value is BridgeEvent {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const event = value as Record<string, unknown>;
-  return typeof event.method === "string" && typeof event.target === "string" && typeof event.threadId === "string";
 }
 
 function closeReason(code: number, reason: Buffer): string {

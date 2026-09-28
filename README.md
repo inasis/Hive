@@ -37,6 +37,17 @@ npm run desktop:dev
 
 Build the desktop package with `npm run desktop:build`. On Linux, Electrobun also needs GTK 3 and WebKitGTK 4.1 development libraries. Linux opens the daemon pairing screen first; choose **SSH 또는 릴레이로 직접 연결** to use an SSH target such as `user@host` or a `hive+tcp://` / `hive+tls://` relay URI instead.
 
+### Windows desktop build
+
+On Windows x64 with Node.js 20 or newer and npm, run these commands from the repository root:
+
+```powershell
+npm ci --prefix apps/desktop
+npm run desktop:build
+```
+
+The Windows executable and installer package are written to `apps/desktop/artifacts/`. Electrobun builds for the host operating system, so a Windows runner is required. The **Electrobun Windows build** GitHub Actions run also uploads a `Hive-windows-x64` artifact.
+
 ## Android build
 
 Requirements: Node.js 20 or newer, Java 17 or newer, and Android SDK platform 35 with Build Tools 35.0.0.

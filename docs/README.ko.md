@@ -11,6 +11,8 @@ npm run desktop:dev
 
 Linux에서는 시작 화면에 데몬 WSS 주소, 인증서 지문, 페어링 토큰을 입력합니다. SSH/릴레이 직접 연결을 선택하면 연결 설정에서 `user@host` 또는 SSH config 별칭을 입력할 수 있습니다. 원격 호스트에 Codex CLI가 설치되어 있고 SSH 비대화형 셸에서 `codex`를 찾을 수 있어야 합니다. 릴레이를 쓰려면 [CLI 및 데스크톱 안내](./codex-bridge.md#connect-through-the-tcp-relay)를 참고하세요.
 
+Windows x64 데스크톱 패키지는 Windows에서 Node.js 20 이상과 npm을 설치하고 저장소 루트에서 `npm ci --prefix apps/desktop` 및 `npm run desktop:build`를 실행해 빌드합니다. `.exe`와 설치 패키지는 `apps/desktop/artifacts/`에 생성됩니다. Linux에서는 Windows 실행 파일을 교차 빌드할 수 없습니다. GitHub Actions의 **Electrobun Windows build** 실행 결과에서 `Hive-windows-x64` 아티팩트를 받을 수도 있습니다.
+
 세션을 열면 대화, 터미널, 파일 탭이 표시됩니다. 파일 탐색은 읽기 전용이며 UTF-8 텍스트 파일을 최대 1 MiB까지 미리 봅니다.
 
 ## Android 빌드

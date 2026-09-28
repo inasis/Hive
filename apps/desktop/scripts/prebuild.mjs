@@ -22,5 +22,14 @@ if (process.platform === "linux") {
   if (compile.status !== 0) process.exit(compile.status ?? 1);
 }
 
-const build = spawnSync("npm", ["run", "build:web"], { cwd: desktopDir, stdio: "inherit" });
+// npm exposes its JS entrypoint to lifecycle scripts. Invoking it through
+// Node avoids Windows' inability to spawn npm.cmd directly without a shell.
+const npmExecPath = process.env.npm_execpath;
+const build = npmExecPath
+  ? spawnSync(process.execPath, [npmExecPath, "run", "build:web"], { cwd: desktopDir, stdio: "inherit" })
+  : spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build:web"], {
+    cwd: desktopDir,
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  });
 if (build.status !== 0) process.exit(build.status ?? 1);

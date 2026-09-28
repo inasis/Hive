@@ -65,3 +65,9 @@ export type AssistantModel = {
   isDefault: boolean;
   hidden: boolean;
 };
+
+export type AssistantPermissionPreset = {
+  id: string;
+  label: string;
+  description: string;
+};

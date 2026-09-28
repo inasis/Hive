@@ -29,13 +29,22 @@ npm run desktop:dev      # Launch the desktop app
 npm run dev:app          # Start the browser preview server
 ```
 
+Build the Windows x64 executable and installer on Windows with Node.js 20 or newer:
+
+```powershell
+npm ci --prefix apps/desktop
+npm run desktop:build
+```
+
+The package is written to `apps/desktop/artifacts/`. Electrobun builds for the host OS, so use a Windows machine or download the `Hive-windows-x64` artifact from the **Electrobun Windows build** GitHub Actions run.
+
 The main screen is independently implemented using the workspace and conversation layout in [PiBun](https://github.com/khairold/pibun) as a reference. The desktop app separates Sessions, Skills, and Connection Settings into distinct pages. On Linux it starts with daemon pairing; choose **SSH 또는 릴레이로 직접 연결** to use the direct SSH or relay workflow instead. On Windows and macOS, open Connection Settings and enter an SSH target or a Hive relay URI. Select an existing thread to resume it, or use the `+` beside a workspace to create a new Codex session in that remote directory. The new-session dialog also accepts another remote path. Model and Thinking selectors update the active Codex thread through app-server and apply to the next turn.
 
 The workspace has three views: **Chat**, **Terminal**, and **Files**. Terminal starts an interactive PTY in the active workspace over SSH, or asks the relay host agent to open a PTY on the remote computer. Files lists directories and previews UTF-8 text files through SSH or the relay. File access is read-only, stays inside the active workspace, and previews are limited to 1 MiB per file.
 
 `npm run dev:app` builds a browser UI preview; live SSH and relay app-server RPC are provided by the native Electrobun host.
 
-The desktop prompt supports `/skills`, `/skill:<name>`, `/resume <thread-id>`, `/help`, and `/quit`. Codex TUI-only screen commands are not executed by app-server. A thread already being used by another Codex client must be closed there before Hive can resume it.
+The app composer supports `/skills`, `/skill:<name>`, `/resume <thread-id>`, `/help`, and `/quit`. When the Codex app-server exposes its native Goal API, `/goal` shows the current session goal, `/goal pause` pauses it, `/goal resume` marks it active, `/goal <objective>` sets it, and `/goal clear` removes it. To resume a goal in a saved session, open that Codex thread and enter `/goal resume`; this reactivates the goal status but does not start a new turn, so send the next prompt afterward. This Goal command is Codex-only and is hidden when the connected app-server does not provide the Goal API. Codex TUI-only screen commands are not executed by app-server. A thread already being used by another Codex client must be closed there before Hive can resume it.
 
 ## Android client and Linux daemon connection
 

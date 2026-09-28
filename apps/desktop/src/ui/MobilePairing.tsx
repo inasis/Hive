@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { connectMobileBridge, disconnectMobileBridge } from "./bridgeClient";
+import { connectMobileBridge, disconnectMobileBridge, preferences } from "./bridgeClient";
+import { PREFERENCE_KEYS } from "../shared/preferences";
 
-const MOBILE_PAIRING_KEY = "hive.mobile.desktop.v1";
 type SavedPairing = { endpoint: string; token: string; fingerprint: string };
 
 export function MobilePairingGate({ children, onUseDirectConnection }: {
@@ -34,7 +34,7 @@ export function MobilePairingGate({ children, onUseDirectConnection }: {
     try {
       await connectMobileBridge(endpoint, token, fingerprint);
       const pairing = { endpoint: normalizedEndpoint(endpoint), token: token.trim(), fingerprint: normalizeFingerprint(fingerprint) };
-      localStorage.setItem(MOBILE_PAIRING_KEY, JSON.stringify(pairing));
+      preferences.setItem(PREFERENCE_KEYS.mobilePairing, JSON.stringify(pairing));
       setEndpoint(pairing.endpoint);
       setToken(pairing.token);
       setFingerprint(pairing.fingerprint);
@@ -48,7 +48,7 @@ export function MobilePairingGate({ children, onUseDirectConnection }: {
 
   const changeDaemon = () => {
     disconnectMobileBridge();
-    localStorage.removeItem(MOBILE_PAIRING_KEY);
+    preferences.removeItem(PREFERENCE_KEYS.mobilePairing);
     setConnected(false);
     setError("");
   };
@@ -78,7 +78,7 @@ export function MobilePairingGate({ children, onUseDirectConnection }: {
 
 function readSavedPairing(): SavedPairing | undefined {
   try {
-    const saved = localStorage.getItem(MOBILE_PAIRING_KEY);
+    const saved = preferences.getItem(PREFERENCE_KEYS.mobilePairing);
     if (!saved) return undefined;
     const value: unknown = JSON.parse(saved);
     if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;

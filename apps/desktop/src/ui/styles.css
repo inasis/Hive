@@ -643,14 +643,14 @@ button:disabled { opacity: .4; cursor: default !important; }
 .connect-dialog select:focus { border-color: var(--text-display); }
 .dialog-help { margin: 8px 0 13px; color: var(--text-secondary); font: 13px/1.7 var(--font-mono); }
 .dialog-help code { padding: 1px 4px; color: var(--text-primary); background: var(--surface-raised); }
-.kiro-permission-presets { margin: 5px 0 14px; padding: 10px; border: 1px solid var(--border-visible); }
-.kiro-permission-presets legend { padding: 0 5px; color: var(--text-secondary); font: 12px var(--font-mono); }
-.connect-dialog .kiro-permission-presets > label { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; margin: 7px 0; font: inherit; }
-.connect-dialog .kiro-permission-presets input[type="checkbox"] { width: 15px; height: 15px; margin: 2px 0 0; padding: 0; accent-color: var(--text-primary); }
-.kiro-permission-presets span { display: grid; gap: 2px; }
-.kiro-permission-presets b { color: var(--text-primary); font: 12px var(--font-mono); }
-.kiro-permission-presets small, .kiro-permission-presets p { color: var(--text-secondary); font: 11px/1.5 var(--font-mono); }
-.kiro-permission-presets p { margin: 9px 0 0; }
+.permission-presets { margin: 5px 0 14px; padding: 10px; border: 1px solid var(--border-visible); }
+.permission-presets legend { padding: 0 5px; color: var(--text-secondary); font: 12px var(--font-mono); }
+.connect-dialog .permission-presets > label { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; margin: 7px 0; font: inherit; }
+.connect-dialog .permission-presets input[type="checkbox"] { width: 15px; height: 15px; margin: 2px 0 0; padding: 0; accent-color: var(--text-primary); }
+.permission-presets span { display: grid; gap: 2px; }
+.permission-presets b { color: var(--text-primary); font: 12px var(--font-mono); }
+.permission-presets small, .permission-presets p { color: var(--text-secondary); font: 11px/1.5 var(--font-mono); }
+.permission-presets p { margin: 9px 0 0; }
 .connection-error { max-height: 120px; overflow: auto; margin-bottom: 12px; padding: 8px 0; border-bottom: 1px solid var(--error); color: var(--error); font: 13px/1.6 var(--font-mono); white-space: pre-wrap; }
 .dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; margin-top: 18px; }
 .dialog-actions button { min-height: 36px; padding: 0 13px; border-radius: 999px; font: 13px var(--font-mono); cursor: pointer; }

@@ -31,6 +31,17 @@ npm run desktop:dev
 
 `npm run desktop:build`로 데스크톱 패키지를 빌드합니다. Linux에서는 GTK 3와 WebKitGTK 4.1 개발 라이브러리도 필요합니다. Linux 앱은 먼저 데몬 주소와 인증 정보를 입력하는 화면을 엽니다. SSH나 릴레이를 직접 쓰려면 **SSH 또는 릴레이로 직접 연결**을 선택하세요.
 
+### Windows 데스크톱 빌드
+
+Windows x64에서 Node.js 20 이상과 npm을 설치한 뒤 저장소 루트에서 실행합니다.
+
+```powershell
+npm ci --prefix apps/desktop
+npm run desktop:build
+```
+
+Windows 실행 파일과 설치 패키지는 `apps/desktop/artifacts/`에 생성됩니다. Electrobun은 현재 대상 OS에서 빌드하므로 Linux에서 Windows용 `.exe`를 만들 수 없습니다. GitHub Actions의 **Electrobun Windows build** 실행 결과에서도 `Hive-windows-x64` 아티팩트를 내려받을 수 있습니다.
+
 ## Android 빌드
 
 Node.js 20 이상, Java 17 이상, Android SDK platform 35와 Build Tools 35.0.0이 필요합니다.

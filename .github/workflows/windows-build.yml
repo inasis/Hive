@@ -1,0 +1,55 @@
+name: Electrobun Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - apps/desktop/**
+      - src/**
+      - package.json
+      - .github/workflows/windows-build.yml
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - src/**
+      - package.json
+      - .github/workflows/windows-build.yml
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Electrobun Windows x64
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        run: npm ci --prefix apps/desktop
+
+      - name: Build Windows app
+        run: npm run desktop:build
+
+      - name: Confirm Windows executable
+        shell: pwsh
+        run: |
+          $executables = Get-ChildItem apps/desktop/artifacts -Recurse -File -Filter '*.exe'
+          if (-not $executables) { throw 'The Windows build did not produce an .exe.' }
+          $executables | ForEach-Object { Write-Host $_.FullName }
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hive-windows-x64
+          path: apps/desktop/artifacts/
+          if-no-files-found: error
+          retention-days: 14
