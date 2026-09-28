@@ -1,13 +1,13 @@
 # Hive
 
-Hive is an Electrobun desktop app and Android client for browsing sessions from AI coding providers. It supports Codex app-server, the OpenCode HTTP server, and Kiro CLI over ACP. Linux desktop and Android connect to a Hive daemon over authenticated WSS by default; desktop apps also support direct SSH or Hive TCP relay connections.
+Hive is an Electrobun desktop app and Android client for browsing sessions from AI coding providers. It supports Codex app-server, the OpenCode HTTP server, and Kiro CLI over ACP. Linux desktop and Android connect to a Hive daemon over authenticated WSS by default; Windows desktop can select daemon pairing or direct mode. Desktop apps also support direct SSH or Hive TCP relay connections.
 
 ```text
-Linux desktop / Android (shared React UI) ───── WSS ── Hive daemon
-                                                      ├── Codex app-server
-                                                      ├── OpenCode HTTP API
-                                                      ├── Kiro CLI / ACP
-                                                      └── SSH / Hive TCP relay ── workspace host
+Windows / Linux desktop / Android (shared React UI) ── WSS ── Hive daemon
+                                                           ├── Codex app-server
+                                                           ├── OpenCode HTTP API
+                                                           ├── Kiro CLI / ACP
+                                                           └── SSH / Hive TCP relay ── workspace host
 ```
 
 ## Project layout
@@ -16,7 +16,7 @@ Linux desktop / Android (shared React UI) ───── WSS ── Hive daemon
 - `apps/android`: Capacitor Android wrapper for the shared UI.
 - `src`: WSS daemon, Codex, OpenCode, and Kiro provider adapters, SSH and TCP relay transports, terminal/file tools, and CLI.
 
-Electrobun builds desktop apps for Linux, Windows, and macOS. Linux and Android use the daemon pairing screen by default; Linux can switch to direct SSH or relay mode. The Android phone connects to a Hive daemon and does not run SSH or Codex locally.
+Electrobun builds desktop apps for Linux, Windows, and macOS. Linux and Android open the daemon pairing screen by default. Windows opens in direct mode and can switch to daemon pairing from **Settings → Connection**; desktop clients can also use direct SSH or relay connections. The Android phone connects to a Hive daemon and does not run SSH or Codex locally.
 
 The daemon WSS API exposes `listProviders`, including each provider's capabilities. Provider-specific requests accept a `provider` ID; older clients that omit it continue to use Codex, while unknown IDs are rejected. `connect` returns the selected provider's models, and `updateThreadSettings` applies a model to an open session.
 
@@ -58,7 +58,7 @@ Requirements: Node.js 20 or newer, Java 17 or newer, and Android SDK platform 35
 
 The script builds the shared React UI, syncs it into the Capacitor Android project, and stages a debug APK at `artifacts/android/Hive-android-debug.apk`. Android Studio can open `apps/android/android` for device runs and release signing.
 
-## Connect Linux desktop or Android to the daemon by IP
+## Connect desktop or Android to the daemon by IP
 
 No domain or manually supplied TLS certificate is needed. Connect the Android phone and the computer running Hive to the same Wi-Fi, then start the daemon on the Codex host:
 
@@ -67,7 +67,7 @@ npm ci
 npm run daemon
 ```
 
-`npm run daemon` builds and starts the daemon in one step. It prints LAN addresses such as `wss://192.168.x.x:4753/rpc`, a certificate SHA-256 fingerprint, and a pairing token. Enter all three once in the Linux desktop or Android pairing screen. If it prints multiple addresses, choose the one on the same Wi-Fi as the client. Allow TCP port 4753 through the computer's firewall. The clients pin the daemon certificate to the fingerprint you entered. The daemon stores its generated certificate and token under `~/.config/hive/` for later runs. Stop it with Ctrl+C.
+`npm run daemon` builds and starts the daemon in one step. It prints LAN addresses such as `wss://192.168.x.x:4753/rpc`, a certificate SHA-256 fingerprint, and a pairing token. Enter all three once in the Linux desktop or Android pairing screen. On Windows, open **Settings → Connection → Hive 데몬에 연결** first, then enter the same values in the pairing screen. If it prints multiple addresses, choose the one on the same Wi-Fi as the client. Allow TCP port 4753 through the computer's firewall. The clients pin the daemon certificate to the fingerprint you entered. The daemon stores its generated certificate and token under `~/.config/hive/` for later runs. Stop it with Ctrl+C.
 
 For access from outside your home network, forward TCP port 4753 on your router to port 4753 on the daemon computer (for example, `192.168.0.5`) and allow it through the computer's firewall. To have the daemon print your public address, run:
 
@@ -79,7 +79,7 @@ Replace the example address with your public IP, then enter the printed `wss://<
 
 After pairing, the client connects directly to the local Codex CLI on the daemon computer; it does not ask for a second SSH target or relay URI. Codex must be installed and signed in for the same user that runs the daemon. The daemon computer must remain on and reachable from the client. For access away from home, use a VPN or configure a reachable IP and firewall.
 
-The Linux desktop app and Android app store the daemon address, fingerprint, and token locally. **데몬 연결 설정 변경** clears the saved pairing. Delete `~/.config/hive/mobile-token` to rotate the generated token.
+Desktop and Android apps store the daemon address, fingerprint, and token locally. **데몬 연결 설정 변경** clears the saved pairing. Delete `~/.config/hive/mobile-token` to rotate the generated token.
 
 ## Connect OpenCode
 

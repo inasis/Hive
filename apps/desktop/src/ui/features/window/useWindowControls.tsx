@@ -3,12 +3,12 @@ import { Icon } from "../../shared/Icon";
 import { bridgeRpc, preferences } from "../../bridgeClient";
 import { PREFERENCE_KEYS } from "../../../shared/preferences";
 import type { GtkSettings, GtkTitleButtonRaster } from "../../../shared/bridge";
+import { WindowsWindowControls } from "./WindowsWindowControls";
 
 const FALLBACK_DECORATION_LAYOUT = { layout: "menu:minimize,maximize,close", left: ["menu"], right: ["minimize", "maximize", "close"] };
 
 export function useWindowControls({
   isLinuxDesktop,
-  isWindowsDesktop,
   desktopSidebarCollapsed,
   onActivePage,
   onOpenConnectionSettings,
@@ -16,7 +16,6 @@ export function useWindowControls({
   onDetectedTheme,
 }: {
   isLinuxDesktop: boolean;
-  isWindowsDesktop: boolean;
   desktopSidebarCollapsed: boolean;
   onActivePage: (page: "sessions" | "skills") => void;
   onOpenConnectionSettings: () => void;
@@ -28,18 +27,17 @@ export function useWindowControls({
   const [gtkMenuOpen, setGtkMenuOpen] = useState(false);
 
   useEffect(() => {
-    if (!isLinuxDesktop && !isWindowsDesktop) return;
+    if (!isLinuxDesktop) return;
     void bridgeRpc.request.windowAction({ action: "state" })
       .then((result) => setWindowMaximized(result.maximized))
       .catch(() => {});
-    if (!isLinuxDesktop) return;
     void bridgeRpc.request.getGtkSettings({})
       .then((settings) => {
         setGtkSettings(settings);
         if (preferences.getItem(PREFERENCE_KEYS.theme) === null) onDetectedTheme(settings.gtk.dark ? "dark" : "light");
       })
       .catch(() => {});
-  }, [isLinuxDesktop, isWindowsDesktop, onDetectedTheme]);
+  }, [isLinuxDesktop, onDetectedTheme]);
 
   const controlWindow = useCallback(async (action: "minimize" | "toggleMaximize" | "close") => {
     try {
@@ -89,11 +87,7 @@ export function useWindowControls({
     return null;
   });
 
-  const renderWindowsControls = () => <>
-    <button className="window-control windows-window-control" type="button" aria-label="최소화" title="최소화" onClick={() => void controlWindow("minimize")}><Icon name="window-minimize" /></button>
-    <button className="window-control windows-window-control" type="button" aria-label={windowMaximized ? "복원" : "최대화"} title={windowMaximized ? "복원" : "최대화"} onClick={() => void controlWindow("toggleMaximize")}><Icon name={windowMaximized ? "window-restore" : "window-maximize"} /></button>
-    <button className="window-control windows-window-control windows-window-control-close" type="button" aria-label="닫기" title="닫기" onClick={() => void controlWindow("close")}><Icon name="close" /></button>
-  </>;
+  const renderWindowsControls = () => <WindowsWindowControls onError={onNotice} />;
 
   return {
     windowMaximized,

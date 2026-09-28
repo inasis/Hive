@@ -221,7 +221,6 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
     renderWindowsControls,
   } = useWindowControls({
     isLinuxDesktop,
-    isWindowsDesktop,
     desktopSidebarCollapsed,
     onActivePage: (page) => setActivePage(page),
     onOpenConnectionSettings: () => openSettings("connection"),

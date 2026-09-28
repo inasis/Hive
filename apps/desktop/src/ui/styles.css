@@ -206,6 +206,14 @@ button:disabled { opacity: .4; cursor: default !important; }
 .window-control .gtk-themed-icon { width: 13px; height: 13px; object-fit: contain; }
 .window-control-native, .window-control-native:hover, .window-control-native:active, .window-control-native:disabled { color: transparent; border: 0; padding: 0; background: transparent; }
 .window-control-native { border-radius: 0; }
+.windows-desktop .topbar-actions { align-self: stretch; }
+.windows-window-controls { height: 100%; align-self: stretch; gap: 0; margin: 0 -10px 0 0; }
+.windows-window-control { width: 46px; height: 100%; min-height: 59px; flex: 0 0 46px; border: 0; border-radius: 0; color: var(--text-secondary); background: transparent; }
+.windows-window-control:hover { color: var(--text-display); background: var(--surface-raised); }
+.windows-window-control:active { background: var(--border-visible); }
+.windows-window-control-close:hover { color: #fff; background: #c42b1c; }
+.windows-window-control-close:active { color: #fff; background: #a52216; }
+.windows-window-control svg { width: 11px; height: 11px; }
 .gtk-title-button { display: block; flex: 0 0 auto; background-image: var(--gtk-titlebutton-normal); background-repeat: no-repeat; background-size: 100% 100%; pointer-events: none; }
 .window-control-native:hover .gtk-title-button { background-image: var(--gtk-titlebutton-hover); }
 .window-control-native:active .gtk-title-button { background-image: var(--gtk-titlebutton-active); }
@@ -706,7 +714,7 @@ button:disabled { opacity: .4; cursor: default !important; }
 
 .desktop-sidebar-toggle-button { display: inline-grid; }
 .mobile-drawer-backdrop { display: none; }
-.mobile-change-desktop { min-height: 38px; padding: 0 12px; margin-top: 6px; cursor: pointer; }
+.daemon-settings-change { min-height: 38px; padding: 0 12px; margin-top: 6px; cursor: pointer; }
 
  .app-shell:not(.mobile-app) .sidebar { background: var(--surface-raised); }
 
@@ -733,6 +741,7 @@ button:disabled { opacity: .4; cursor: default !important; }
 }
 
 .mobile-pairing-screen {
+  position: relative;
   width: 100%;
   min-height: 100dvh;
   padding: max(28px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
@@ -741,6 +750,9 @@ button:disabled { opacity: .4; cursor: default !important; }
   color: var(--text-primary);
   background: var(--background);
 }
+.windows-pairing-screen { padding-top: max(88px, calc(env(safe-area-inset-top) + 72px)); }
+.windows-pairing-titlebar { position: absolute; top: 0; right: 0; left: 0; height: 59px; padding-left: 18px; display: flex; align-items: center; justify-content: space-between; color: var(--text-secondary); border-bottom: 1px solid var(--border); font: 13px var(--font-mono); }
+.windows-pairing-titlebar .windows-window-controls { margin-right: 0; }
 .mobile-pairing-card {
   width: min(100%, 420px);
   padding: 26px 22px 22px;

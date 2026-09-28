@@ -22,8 +22,11 @@ export const isMobileApp = typeof window !== "undefined" && (
   window.Capacitor?.isNativePlatform?.() === true ||
   window.location.protocol === "capacitor:"
 );
-export const isLinuxDesktop = typeof navigator !== "undefined" && !isMobileApp && /linux/i.test(navigator.platform);
-export const isWindowsDesktop = typeof navigator !== "undefined" && !isMobileApp && /win/i.test(navigator.platform);
+const desktopPlatform = typeof navigator === "undefined"
+  ? ""
+  : `${navigator.platform} ${navigator.userAgent}`;
+export const isLinuxDesktop = typeof navigator !== "undefined" && !isMobileApp && /linux/i.test(desktopPlatform);
+export const isWindowsDesktop = typeof navigator !== "undefined" && !isMobileApp && /windows|win32|win64/i.test(desktopPlatform);
 export const preferences: PreferencesPort = browserPreferences;
 let activeAssistantProvider: AssistantProvider = readAssistantProvider();
 export let isDaemonClient = isMobileApp || readDesktopDaemonMode();

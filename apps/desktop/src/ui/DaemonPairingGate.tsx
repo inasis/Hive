@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { connectDaemonBridge, disconnectDaemonBridge, preferences } from "./bridgeClient";
+import { connectDaemonBridge, disconnectDaemonBridge, isWindowsDesktop, preferences } from "./bridgeClient";
 import { PREFERENCE_KEYS } from "../shared/preferences";
+import { WindowsWindowControls } from "./features/window/WindowsWindowControls";
 
 type SavedPairing = { endpoint: string; token: string; fingerprint: string };
 
@@ -54,7 +55,11 @@ export function DaemonPairingGate({ children, onUseDirectConnection }: {
   };
 
   if (connected) return <>{children(changePairing)}</>;
-  return <main className="mobile-pairing-screen">
+  return <main className={`mobile-pairing-screen ${isWindowsDesktop ? "windows-pairing-screen" : ""}`}>
+    {isWindowsDesktop && <header className="windows-pairing-titlebar electrobun-webkit-app-region-drag">
+      <span>Hive</span>
+      <div className="window-controls windows-window-controls electrobun-webkit-app-region-no-drag" aria-label="창 제어"><WindowsWindowControls onError={setError} /></div>
+    </header>}
     <div className="mobile-pairing-card">
       <div className="mobile-pairing-mark">H</div>
       <span className="eyebrow">HIVE DAEMON</span>
