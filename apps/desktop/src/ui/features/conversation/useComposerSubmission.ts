@@ -3,10 +3,11 @@ import type { AssistantProvider, PromptImageAttachment, RemoteCommand, RemoteMod
 import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
 import { bridgeRpc } from "../../bridgeClient";
 import type { AppPage } from "../workspace/workspace-types";
-import { upsertProviderThreads, type LocalImageAttachment } from "./session-state";
+import type { LocalImageAttachment } from "./session-state";
 import type { ThreadViewStore } from "./thread-view-store";
 import type { ConversationRuntime } from "./useConversationRuntime";
 import { isHiveComposerCommandName, runHiveComposerCommand } from "./hive-composer-commands";
+import { executeProviderComposerCommand, resolveProviderComposerCommand } from "./provider-composer-commands";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -72,24 +73,15 @@ export function useComposerSubmission({ state, refs, setters, actions, hiveComma
     if (!text || !state.connectedTarget || !state.activeThreadId) return;
     if (state.slashMenuOpen && state.slashSkillLoading) return;
     const typedCommand = text.match(/^\/([A-Za-z0-9._/-]+)(?:\s+([\s\S]*))?$/);
-    let matchedSlashCommand = typedCommand && state.slashCommands.find((command) => command.name === typedCommand[1]);
-    const localCommand = typedCommand && isHiveComposerCommandName(typedCommand[1]);
-    if (typedCommand && !matchedSlashCommand && !localCommand) {
-      try {
-        const result = await bridgeRpc.request.listCommands({
-          target: state.connectedTarget,
-          threadId: state.activeThreadId,
-          cwd: state.activeCwd,
-          provider: state.threadProvider,
-        });
-        matchedSlashCommand = result.commands.find((command) => command.name === typedCommand[1]) ?? null;
-        if (refs.runtime.isThreadSelected(state.connectedTarget, state.threadProvider, state.activeThreadId)) {
-          setters.setSlashCommands(result.commands);
-        }
-      } catch {
-        // An unrecognized slash prefix remains an ordinary provider prompt.
-      }
-    }
+    const commandName = typedCommand?.[1];
+    const isHiveCommand = commandName ? isHiveComposerCommandName(commandName) : false;
+    const matchedSlashCommand = await resolveProviderComposerCommand(
+      commandName,
+      isHiveCommand,
+      state,
+      refs.runtime,
+      setters.setSlashCommands,
+    );
     if (pendingImages.length && typedCommand) {
       setters.setNotice(`이미지는 ${state.threadProviderName} 일반 메시지에 첨부할 수 있습니다. 먼저 슬래시 명령을 지우세요.`);
       return;
@@ -120,29 +112,11 @@ export function useComposerSubmission({ state, refs, setters, actions, hiveComma
       setters.setModelSettingsDialogOpen(true);
       return;
     }
-    if (matchedSlashCommand && typedCommand) {
-      setters.setDraft("");
-      setters.setNotice("");
-      try {
-        const result = await bridgeRpc.request.runCommand({
-          target: state.connectedTarget,
-          threadId: state.activeThreadId,
-          command: matchedSlashCommand.name,
-          arguments: typedCommand[2] ?? "",
-          cwd: state.activeCwd,
-          provider: state.threadProvider,
-        });
-        if (result.thread) {
-          setters.setThreads((current) => upsertProviderThreads(current, [result.thread!], state.threadProvider));
-          await actions.openThread(state.connectedTarget, result.thread);
-        }
-        setters.setNotice(result.message ?? `/${matchedSlashCommand.name} 명령을 실행했습니다.`);
-      } catch (error) {
-        setters.setDraft(text);
-        setters.setNotice(errorMessage(error));
-      }
-      return;
-    }
+    if (await executeProviderComposerCommand(typedCommand, matchedSlashCommand, {
+      state,
+      setters,
+      actions: { openThread: actions.openThread },
+    })) return;
 
     const promptTarget = state.connectedTarget;
     const promptThreadId = state.activeThreadId;
