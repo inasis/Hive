@@ -1,5 +1,5 @@
 import { openCodeAuthorization, probeOpenCodeApi, type OpenCodeApiVersion } from "./api.js";
-import { mapOpenCodeConfiguredModels, mapOpenCodeModels, mergeOpenCodeModels, parseOpenCodeModelId, type OpenCodeModel } from "./model-mapper.js";
+import { parseOpenCodeModelId, type OpenCodeModel } from "./model-mapper.js";
 import {
   mapOpenCodeSession,
   mapOpenCodeTranscript,
@@ -13,6 +13,7 @@ import {
 } from "./conversation-mapper.js";
 import { OpenCodeTurnWatcher } from "./turn-watcher.js";
 import { OpenCodeHttpClient } from "./http-client.js";
+import { loadOpenCodeModelCatalog } from "./model-catalog.js";
 import { parseOpenCodeCommands, parseOpenCodeSkills } from "./resource-catalog-mapper.js";
 import type { OpenCodeCommand, OpenCodeSkill } from "./types.js";
 import type { AssistantEvent } from "../../../application/ports/events.js";
@@ -75,58 +76,7 @@ export class OpenCodeProviderConnection {
   }
 
   async listModels(directory?: string): Promise<{ models: OpenCodeModel[]; modelWarning?: string }> {
-    const modelDirectory = directory?.trim();
-    const modelQuery = modelDirectory
-      ? this.apiVersion === "v2" ? { locationDirectory: modelDirectory } : { directory: modelDirectory }
-      : undefined;
-    const modelRequestInit: RequestInit = this.apiVersion === "v2" && modelDirectory
-      ? { headers: { "x-opencode-directory": encodeURIComponent(modelDirectory) } }
-      : {};
-    const modelReadErrors: string[] = [];
-    const readOptional = async (path: string): Promise<unknown | undefined> => {
-      try {
-        return await this.http.request(path, modelQuery, modelRequestInit);
-      } catch (error) {
-        modelReadErrors.push(`${path}: ${errorMessage(error)}`);
-        return undefined;
-      }
-    };
-    const [modelResponse, defaultResponse] = await Promise.all([
-      this.apiVersion === "v2"
-        ? readOptional("/api/model")
-        : readOptional("/config/providers"),
-      this.apiVersion === "v2" ? readOptional("/api/model/default") : Promise.resolve(undefined),
-    ]);
-    const defaultModel = asObject(unwrapData(defaultResponse)) ?? undefined;
-    let models = mapOpenCodeModels(asObject(unwrapData(modelResponse)) ?? {}, this.apiVersion, defaultModel);
-    const modelSourceDetails = [`${this.apiVersion === "v2" ? "/api/model" : "/config/providers"}: ${models.filter((model) => !model.hidden).length}개`];
-    if (this.apiVersion === "v2") {
-      const configResponse = await readOptional("/api/config");
-      if (configResponse !== undefined) {
-        const configuredModels = mapOpenCodeConfiguredModels(configResponse, defaultModel);
-        modelSourceDetails.push(`/api/config: ${configuredModels.filter((model) => !model.hidden).length}개`);
-        models = mergeOpenCodeModels(models, configuredModels);
-      }
-    } else {
-      const [configuredProviders, configResponse] = await Promise.all([
-        readOptional("/config/providers"),
-        readOptional("/config"),
-      ]);
-      if (configuredProviders) {
-        const configuredProviderModels = mapOpenCodeModels(asObject(configuredProviders) ?? {}, "v1");
-        modelSourceDetails.push(`/config/providers: ${configuredProviderModels.filter((model) => !model.hidden).length}개`);
-        models = mergeOpenCodeModels(models, configuredProviderModels);
-      }
-      if (configResponse !== undefined) {
-        const configuredModels = mapOpenCodeConfiguredModels(configResponse, defaultModel);
-        modelSourceDetails.push(`/config: ${configuredModels.filter((model) => !model.hidden).length}개`);
-        models = mergeOpenCodeModels(models, configuredModels);
-      }
-    }
-    const modelWarning = models.some((model) => !model.hidden)
-      ? undefined
-      : `OpenCode ${this.apiVersion} API에서 선택 가능한 모델을 찾지 못했습니다. 가져온 모델 수: ${[...modelSourceDetails, ...modelReadErrors].join("; ") || "모델 목록과 설정 응답 없음"}`;
-    return { models, ...(modelWarning ? { modelWarning } : {}) };
+    return loadOpenCodeModelCatalog(this.http, this.apiVersion, directory);
   }
 
   async listSessions(directory?: string): Promise<OpenCodeSessionInfo[]> {
