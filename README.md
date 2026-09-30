@@ -16,6 +16,8 @@ Windows / Linux desktop / Android (shared React UI) ── WSS ── Hive daemo
 - `apps/android`: Capacitor Android wrapper for the shared UI.
 - `src`: WSS daemon, Codex, OpenCode, and Kiro provider adapters, SSH and TCP relay transports, terminal/file tools, and CLI.
 
+The root npm workspaces manage the desktop and Android packages with one root install and lockfile.
+
 Electrobun builds desktop apps for Linux, Windows, and macOS. Linux and Android open the daemon pairing screen by default. Windows opens in direct mode and can switch to daemon pairing from **Settings → Connection**; desktop clients can also use direct SSH or relay connections. The Android phone connects to a Hive daemon and does not run SSH or Codex locally.
 
 The daemon WSS API exposes `listProviders`, including each provider's capabilities. Provider-specific requests accept a `provider` ID; older clients that omit it continue to use Codex, while unknown IDs are rejected. `connect` returns the selected provider's models, and `updateThreadSettings` applies a model to an open session.
@@ -31,7 +33,7 @@ Kiro sessions expose model and reasoning effort selection, agent modes, tool app
 Requirements: Node.js 20 or newer and npm.
 
 ```sh
-npm ci --prefix apps/desktop
+npm ci
 npm run desktop:dev
 ```
 
@@ -42,7 +44,7 @@ Build the desktop package with `npm run desktop:build`. On Linux, Electrobun als
 On Windows x64 with Node.js 20 or newer and npm, run these commands from the repository root:
 
 ```powershell
-npm ci --prefix apps/desktop
+npm ci
 npm run desktop:build
 ```
 
@@ -50,10 +52,11 @@ The Windows executable and installer package are written to `apps/desktop/artifa
 
 ## Android build
 
-Requirements: Node.js 20 or newer, Java 17 or newer, and Android SDK platform 35 with Build Tools 35.0.0.
+Requirements: Node.js 20 or newer, Java 21, and Android SDK platform 35 with Build Tools 35.0.0.
 
 ```sh
-./scripts/build-android.sh
+npm ci
+npm run android:build
 ```
 
 The script builds the shared React UI, syncs it into the Capacitor Android project, and stages a debug APK at `artifacts/android/Hive-android-debug.apk`. Android Studio can open `apps/android/android` for device runs and release signing.
@@ -67,7 +70,7 @@ npm ci
 npm run daemon
 ```
 
-`npm run daemon` builds and starts the daemon in one step. It prints LAN addresses such as `wss://192.168.x.x:4753/rpc`, a certificate SHA-256 fingerprint, and a pairing token. Enter all three once in the Linux desktop or Android pairing screen. On Windows, open **Settings → Connection → Hive 데몬에 연결** first, then enter the same values in the pairing screen. If it prints multiple addresses, choose the one on the same Wi-Fi as the client. Allow TCP port 4753 through the computer's firewall. The clients pin the daemon certificate to the fingerprint you entered. The daemon stores its generated certificate and token under `~/.config/hive/` for later runs. Stop it with Ctrl+C.
+`npm run daemon` builds and starts the daemon. Re-running it restarts a daemon managed by this command with its original CLI arguments and environment. If a connected client loses the daemon during prompt submission, it keeps the exact request in memory and retries once after provider restoration, unless it already received that thread's turn-start event. Prompts are not written to disk. The command prints LAN addresses such as `wss://192.168.x.x:4753/rpc`, a certificate SHA-256 fingerprint, and a pairing token. Enter all three once in the Linux desktop or Android pairing screen. On Windows, open **Settings → Connection → Hive 데몬에 연결** first, then enter the same values in the pairing screen. If it prints multiple addresses, choose the one on the same Wi-Fi as the client. Allow TCP port 4753 through the computer's firewall. The clients pin the daemon certificate to the fingerprint you entered. The daemon stores its generated certificate and token under `~/.config/hive/` for later runs. Stop it with Ctrl+C.
 
 For access from outside your home network, forward TCP port 4753 on your router to port 4753 on the daemon computer (for example, `192.168.0.5`) and allow it through the computer's firewall. To have the daemon print your public address, run:
 

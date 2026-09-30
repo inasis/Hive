@@ -4,6 +4,7 @@ import type { ProviderApprovalsPort, ApprovalDecision, ProviderApprovalResult } 
 import { buildOpenCodeSkillInput } from "./prompt.js";
 import type { OpenCodeSessionContext } from "./session-context.js";
 import type { OpenCodeEventPublisher } from "./types.js";
+import { appendA2ACommunicationSummary, hasA2ACommunicationSummary } from "../a2a-prompt-context.js";
 
 /** Implements OpenCode turn, model-selection, and approval behavior. */
 export class OpenCodeTurnAdapter implements ProviderTurnsPort, ProviderSettingsPort, ProviderApprovalsPort {
@@ -12,8 +13,16 @@ export class OpenCodeTurnAdapter implements ProviderTurnsPort, ProviderSettingsP
     private readonly publish: OpenCodeEventPublisher,
   ) {}
 
+  async assertPromptReady(target: string, threadId: string): Promise<void> {
+    const session = this.context.require(target);
+    if (!session.openedThreadIds.has(threadId)) throw new Error("Open this OpenCode session before sending a message");
+    if (!session.settingsByThread.get(threadId)?.model.trim()) {
+      throw new Error("OpenCode requires a model to be selected before sending a message.");
+    }
+  }
+
   async sendPrompt(target: string, threadId: string, input: ProviderPromptInput): Promise<ProviderPromptResult> {
-    if (!input.text.trim()) throw new Error("Message cannot be empty");
+    if (!input.text.trim() && !hasA2ACommunicationSummary(input.a2aCommunications)) throw new Error("Message cannot be empty");
     const session = this.context.require(target);
     if (!session.openedThreadIds.has(threadId)) throw new Error("Open this OpenCode session before sending a message");
     let prompt = input.text;
@@ -24,6 +33,7 @@ export class OpenCodeTurnAdapter implements ProviderTurnsPort, ProviderSettingsP
       if (!skill) throw new Error("선택한 OpenCode 스킬을 찾을 수 없습니다. / 메뉴를 다시 열어 목록을 새로고침하세요.");
       prompt = buildOpenCodeSkillInput(skill, input.text);
     }
+    prompt = appendA2ACommunicationSummary(prompt, input.a2aCommunications);
     const turnId = await session.connection.sendPrompt(
       target,
       threadId,

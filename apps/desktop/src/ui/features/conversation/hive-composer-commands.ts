@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { AssistantProvider, RemoteThread } from "../../../shared/bridge";
-import type { AppPage } from "../workspace/workspace-types";
-import type { ConversationRuntime } from "./useConversationRuntime";
+import type { AppPage, SettingsSection } from "../../shared/workspace-state";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -12,12 +12,13 @@ export type HiveComposerCommandOptions = {
     threadProvider: AssistantProvider;
     threads: RemoteThread[];
   };
-  refs: { runtime: ConversationRuntime };
+  refs: { runtime: ConversationRuntimePort };
   setters: {
     setDraft: StateSetter<string>;
     setNotice: StateSetter<string>;
     setFilter: StateSetter<string>;
     setActivePage: StateSetter<AppPage>;
+    setSettingsSection: StateSetter<SettingsSection>;
   };
   actions: {
     disconnect(): Promise<void>;
@@ -68,7 +69,8 @@ export async function runHiveComposerCommand(text: string, options: HiveComposer
   }
   if (/^\/skills(?:\s|$)/i.test(text)) {
     setters.setFilter(text.replace(/^\/skills\s*/i, ""));
-    setters.setActivePage("skills");
+    setters.setSettingsSection("skills");
+    setters.setActivePage("settings");
     setters.setDraft("");
     return true;
   }

@@ -1,6 +1,7 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import type { AssistantProvider, RemoteThread } from "../../../shared/bridge";
 import { bridgeRpc } from "../../bridgeClient";
+import type { SideChatTab } from "../../shared/conversation-view";
 
 type RenameDialog = { threadId: string; provider: AssistantProvider; title: string };
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
@@ -14,7 +15,7 @@ export type SessionManagementOptions = {
   };
   setters: {
     setThreads: StateSetter<RemoteThread[]>;
-    setSideChats: StateSetter<import("../conversation/session-state").SideChatTab[]>;
+    setSideChats: StateSetter<SideChatTab[]>;
     setActiveTitle: StateSetter<string>;
     setNotice: StateSetter<string>;
   };

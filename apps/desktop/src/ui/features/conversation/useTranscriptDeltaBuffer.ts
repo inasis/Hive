@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { AssistantProvider, TranscriptEntry } from "../../../shared/bridge";
 import { isAssistantProvider } from "../../../../../../src/domain/provider-catalog.js";
 import { appendAssistantDelta } from "./transcript-state";
-import { threadViewKey } from "./session-state";
+import { threadViewKey } from "../../shared/conversation-view";
 
 type AssistantDelta = { text: string; turnId: string; providerMessageId: string };
 type ThreadEntryUpdate = (current: TranscriptEntry[]) => TranscriptEntry[];

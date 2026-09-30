@@ -1,8 +1,8 @@
 import { useRef, type KeyboardEvent } from "react";
 import { Icon } from "../../shared/Icon";
-import { effortLabel } from "../sessions/session-settings-format";
-import type { LocalImageAttachment } from "./session-state";
-import type { SlashMenuItem } from "../skills/slash-menu-types";
+import { effortLabel } from "../../shared/effort-label";
+import type { LocalImageAttachment } from "../../shared/conversation-view";
+import type { SlashMenuItem } from "../../shared/slash-menu";
 import type { AssistantProvider, RemoteCommand, RemoteModel, RemoteSkill } from "../../../shared/bridge";
 import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
 

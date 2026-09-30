@@ -1,8 +1,8 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { AssistantProvider, RemoteCommand, RemoteThread } from "../../../shared/bridge";
 import { bridgeRpc } from "../../bridgeClient";
-import { upsertProviderThreads } from "./session-state";
-import type { ConversationRuntime } from "./useConversationRuntime";
+import { upsertProviderThreads } from "../../shared/provider-thread-state";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -18,7 +18,7 @@ export async function resolveProviderComposerCommand(
   commandName: string | undefined,
   isHiveCommand: boolean,
   state: ProviderComposerCommandState & { slashCommands: RemoteCommand[] },
-  runtime: Pick<ConversationRuntime, "isThreadSelected">,
+  runtime: Pick<ConversationRuntimePort, "isThreadSelected">,
   setSlashCommands: StateSetter<RemoteCommand[]>,
 ): Promise<RemoteCommand | null> {
   if (!commandName) return null;

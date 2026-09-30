@@ -1,7 +1,7 @@
 import { Electroview } from "electrobun/view";
 import { DEFAULT_ASSISTANT_PROVIDER, isAssistantProvider } from "../../../../src/domain/provider-catalog.js";
 import { parseBridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
-import { isProviderDaemonApiMethod } from "../../../../src/interfaces/contracts/daemon-api.js";
+import { isProviderDaemonApiMethod, type DaemonApiRequestMap, type DaemonApiResponseMap } from "../../../../src/interfaces/contracts/daemon-api.js";
 import { LOCAL_WORKSPACE_TARGET, type AssistantProvider, type BridgeEvent, type HiveBridgeSchema } from "../shared/bridge";
 import { DaemonClientTransport } from "../platform/daemon-client-transport";
 import { browserPreferences } from "../platform/browser-preferences";
@@ -38,6 +38,12 @@ const daemonClientTransport = new DaemonClientTransport(isAndroidApp, () => !isM
   disconnect: async () => { await nativeRpc.request.daemonDisconnect({}); },
 });
 const uiEventListeners = new Map<UiBridgeEventListener, (event: BridgeEvent) => void>();
+type ProviderRestoreState = { version: number; outcome: "ready" } | { version: number; outcome: "failed"; message: string };
+type ProviderRestoreOutcome = { outcome: "ready" } | { outcome: "failed"; message: string };
+type ProviderRestoreWaiter = { afterVersion: number; resolve(): void; reject(error: Error): void; timeout: number };
+const providerRestoreStates = new Map<string, ProviderRestoreState>();
+const providerRestoreWaiters = new Map<string, Set<ProviderRestoreWaiter>>();
+const PROMPT_RECONNECT_TIMEOUT_MS = 90_000;
 
 export function setAndroidStatusBarAppearance(light: boolean): void {
   daemonClientTransport.setStatusBarAppearance(light);
@@ -88,6 +94,104 @@ export function removeUiBridgeEventListener(listener: UiBridgeEventListener): vo
   else nativeRpc.removeMessageListener("event", onWireEvent);
 }
 
+/** Mark the provider session ready after a daemon reconnect has restored its thread state. */
+export function markDaemonProviderRestored(target: string, provider: AssistantProvider): void {
+  updateProviderRestoreState(target, provider, { outcome: "ready" });
+}
+
+/** Report that a daemon reconnect could not restore the provider session. */
+export function markDaemonProviderRestoreFailed(target: string, provider: AssistantProvider, message: string): void {
+  updateProviderRestoreState(target, provider, { outcome: "failed", message });
+}
+
+/** Retry a prompt once after the daemon transport and provider session recover. */
+export async function sendPromptWithDaemonRestartRecovery(
+  params: DaemonApiRequestMap["sendPrompt"],
+): Promise<DaemonApiResponseMap["sendPrompt"]> {
+  if (!isDaemonClient) return bridgeRpc.request.sendPrompt(params);
+
+  const provider = params.provider ?? activeAssistantProvider;
+  const restoreKey = providerRestoreKey(params.target, provider);
+  const restoreVersion = providerRestoreStates.get(restoreKey)?.version ?? 0;
+  let disconnected = false;
+  let turnStarted = false;
+  let transportFailure: string | undefined;
+  const onEvent: UiBridgeEventListener = (event) => {
+    if (event.type === "transportDisconnected") disconnected = true;
+    else if (event.type === "transportFailed") transportFailure = event.message ?? "Hive 데몬에 다시 연결하지 못했습니다.";
+    else if (event.type === "turnStarted" && event.target === params.target && event.threadId === params.threadId &&
+        (!event.provider || event.provider === provider)) turnStarted = true;
+  };
+
+  addUiBridgeEventListener(onEvent);
+  try {
+    try {
+      return await bridgeRpc.request.sendPrompt(params);
+    } catch (error) {
+      if (!disconnected) throw error;
+      if (turnStarted) return { accepted: true };
+      if (transportFailure) throw new Error(transportFailure);
+      await waitForProviderRestore(restoreKey, restoreVersion);
+      if (transportFailure) throw new Error(transportFailure);
+      await bridgeRpc.request.openThread({
+        target: params.target,
+        threadId: params.threadId,
+        provider,
+        includeTranscript: false,
+      });
+      return await bridgeRpc.request.sendPrompt(params);
+    }
+  } finally {
+    removeUiBridgeEventListener(onEvent);
+  }
+}
+
+function updateProviderRestoreState(
+  target: string,
+  provider: AssistantProvider,
+  state: ProviderRestoreOutcome,
+): void {
+  const key = providerRestoreKey(target, provider);
+  const next: ProviderRestoreState = { ...state, version: (providerRestoreStates.get(key)?.version ?? 0) + 1 };
+  providerRestoreStates.set(key, next);
+  const waiters = providerRestoreWaiters.get(key);
+  if (!waiters) return;
+  for (const waiter of [...waiters]) {
+    if (waiter.afterVersion >= next.version) continue;
+    window.clearTimeout(waiter.timeout);
+    waiters.delete(waiter);
+    if (next.outcome === "ready") waiter.resolve();
+    else waiter.reject(new Error(next.message));
+  }
+  if (waiters.size === 0) providerRestoreWaiters.delete(key);
+}
+
+function waitForProviderRestore(key: string, afterVersion: number): Promise<void> {
+  const current = providerRestoreStates.get(key);
+  if (current && current.version > afterVersion) {
+    return current.outcome === "ready" ? Promise.resolve() : Promise.reject(new Error(current.message));
+  }
+  return new Promise((resolve, reject) => {
+    const waiters = providerRestoreWaiters.get(key) ?? new Set<ProviderRestoreWaiter>();
+    const waiter: ProviderRestoreWaiter = {
+      afterVersion,
+      resolve,
+      reject,
+      timeout: window.setTimeout(() => {
+        waiters.delete(waiter);
+        if (waiters.size === 0) providerRestoreWaiters.delete(key);
+        reject(new Error("Hive 데몬 연결은 복구됐지만 provider 세션 준비를 기다리는 시간이 초과됐습니다."));
+      }, PROMPT_RECONNECT_TIMEOUT_MS),
+    };
+    waiters.add(waiter);
+    providerRestoreWaiters.set(key, waiters);
+  });
+}
+
+function providerRestoreKey(target: string, provider: AssistantProvider): string {
+  return target + "\u0000" + provider;
+}
+
 export const bridgeRpc = new Proxy(nativeRpc, {
   get(target, property, receiver) {
     if (property === "request") {
@@ -102,7 +206,7 @@ export const bridgeRpc = new Proxy(nativeRpc, {
             return { ...object, provider: object.provider ?? activeAssistantProvider };
           };
           const nativeDesktopDaemon = !isMobileApp && isDaemonClient;
-          if (nativeDesktopDaemon && ["windowAction", "getGtkSettings", "getWindowFrame", "setWindowFrame", "daemonConnect", "daemonRequest", "daemonDisconnect"].includes(method)) {
+          if (nativeDesktopDaemon && ["windowAction", "getHostPlatform", "getGtkSettings", "getWindowFrame", "setWindowFrame", "daemonConnect", "daemonRequest", "daemonDisconnect"].includes(method)) {
             return Reflect.get(requests, method);
           }
           if (!isMobileApp && !nativeDesktopDaemon) {

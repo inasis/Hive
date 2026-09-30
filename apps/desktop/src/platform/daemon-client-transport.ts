@@ -1,5 +1,6 @@
 import { parseBridgeEvent, type BridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
-import { parseDaemonApiRequest, type DaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-api.js";
+import { parseDaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-request.js";
+import type { DaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-api.js";
 import { parseDaemonServerPacket } from "../../../../src/interfaces/contracts/daemon-transport.js";
 import { normalizeDaemonCredentials } from "../../../../src/adapters/transport/daemon-credentials.js";
 import { DaemonReconnectPolicy } from "../../../../src/adapters/transport/daemon-reconnect-policy.js";
@@ -109,8 +110,8 @@ export class DaemonClientTransport {
     return new Promise((resolve, reject) => {
       let settled = false;
       const timeout = window.setTimeout(() => finish(new Error("Hive 데몬에 연결하지 못했습니다. 주소와 네트워크를 확인하세요.")), 15_000);
-      const finish = (error?: Error): void => {
-        if (settled) return;
+      const finish = (error?: Error): boolean => {
+        if (settled) return false;
         settled = true;
         window.clearTimeout(timeout);
         if (error) {
@@ -121,6 +122,7 @@ export class DaemonClientTransport {
           this.connected = true;
           resolve();
         }
+        return true;
       };
       void this.socket.connect(credentials, {
         open: () => {
@@ -128,6 +130,11 @@ export class DaemonClientTransport {
             .catch((error: unknown) => finish(asError(error)));
         },
         message: (data) => this.receiveMessage(data, credentials, finish),
+        resume: () => {
+          if (!this.android || this.reconnectStopped || this.credentials !== credentials) return;
+          if (this.connected) this.handleUnexpectedDisconnect("앱이 다시 활성화되어 데몬 연결을 복구합니다.", true, 0);
+          else this.scheduleReconnect(0);
+        },
         error: (message) => {
           if (!settled) finish(new Error(message));
           else if (this.android) this.handleUnexpectedDisconnect(message || "Hive 데몬 연결 오류입니다.");
@@ -141,7 +148,7 @@ export class DaemonClientTransport {
     });
   }
 
-  private receiveMessage(data: string, credentials: MobileBridgeCredentials, finish: (error?: Error) => void): void {
+  private receiveMessage(data: string, credentials: MobileBridgeCredentials, finish: (error?: Error) => boolean): void {
     let packet: ReturnType<typeof parseDaemonServerPacket>;
     try {
       const parsed: unknown = JSON.parse(data);
@@ -163,7 +170,8 @@ export class DaemonClientTransport {
     } else if (packet.type === "response") {
       this.rpc.receivePacket(packet);
     } else if (packet.type === "error") {
-      finish(new Error(packet.error));
+      const reason = daemonProtocolErrorMessage(packet.error, this.rpc.pendingMethods());
+      if (!finish(new Error(reason))) this.handleUnexpectedDisconnect(reason, false);
     }
   }
 
@@ -179,14 +187,14 @@ export class DaemonClientTransport {
     document.removeEventListener("visibilitychange", this.handleVisibilityChange);
   }
 
-  private handleUnexpectedDisconnect(reason: string, retry = true): void {
+  private handleUnexpectedDisconnect(reason: string, retry = true, retryDelayMs?: number): void {
     const wasConnected = this.connected;
     this.connected = false;
     this.clearTransport();
     this.rpc.rejectAll(reason);
     if (!wasConnected || this.reconnectStopped || !this.credentials) return;
     this.notifyTransport("hive/transport/disconnected", reason);
-    if (retry) this.scheduleReconnect();
+    if (retry) this.scheduleReconnect(retryDelayMs);
     else {
       this.stopReconnect(false);
       if (this.android) void this.socket.setKeepAlive(false).catch(() => {});
@@ -253,4 +261,10 @@ export class DaemonClientTransport {
 
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function daemonProtocolErrorMessage(message: string, pendingMethods: string[]): string {
+  if (!/unsupported (?:mobile )?daemon request/i.test(message)) return message;
+  const methods = pendingMethods.length ? ` (요청: ${pendingMethods.join(", ")})` : "";
+  return `Hive 데몬이 요청 형식을 지원하지 않습니다${methods}. Android 앱과 Hive 데몬 버전을 맞추고 데몬을 다시 시작하세요.`;
 }

@@ -1,11 +1,12 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { AssistantProvider, PromptImageAttachment, RemoteCommand, RemoteModel, RemoteSkill, RemoteThread, TranscriptEntry } from "../../../shared/bridge";
 import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
-import { bridgeRpc } from "../../bridgeClient";
-import type { AppPage } from "../workspace/workspace-types";
-import type { LocalImageAttachment } from "./session-state";
-import type { ThreadViewStore } from "./thread-view-store";
-import type { ConversationRuntime } from "./useConversationRuntime";
+import type { DaemonApiRequestMap } from "../../../../../../src/interfaces/contracts/daemon-api.js";
+import { sendPromptWithDaemonRestartRecovery } from "../../bridgeClient";
+import type { AppPage, SettingsSection } from "../../shared/workspace-state";
+import type { LocalImageAttachment } from "../../shared/conversation-view";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
 import { isHiveComposerCommandName, runHiveComposerCommand } from "./hive-composer-commands";
 import { executeProviderComposerCommand, resolveProviderComposerCommand } from "./provider-composer-commands";
 
@@ -31,8 +32,8 @@ export type ComposerSubmissionOptions = {
     models: RemoteModel[];
   };
   refs: {
-    threadViews: ThreadViewStore;
-    runtime: ConversationRuntime;
+    threadViews: ThreadViewStorePort;
+    runtime: ConversationRuntimePort;
   };
   setters: {
     setDraft: StateSetter<string>;
@@ -57,6 +58,7 @@ export type ComposerSubmissionOptions = {
     setters: {
       setFilter: StateSetter<string>;
       setActivePage: StateSetter<AppPage>;
+      setSettingsSection: StateSetter<SettingsSection>;
     };
     actions: {
       disconnect(): Promise<void>;
@@ -141,15 +143,17 @@ export function useComposerSubmission({ state, refs, setters, actions, hiveComma
     setters.setBusySince(startedAt);
     setters.setNotice("");
     try {
-      const started = await bridgeRpc.request.sendPrompt({
+      const promptRequest = {
         target: promptTarget,
         threadId: promptThreadId,
         text,
         cwd: state.activeCwd,
         ...(skillId ? { skillId } : {}),
-        ...(promptImages.length ? { images: promptImages } : {}),
         provider: promptProvider,
-      });
+      };
+      const started = promptImages.length && assistantProviderSupports(promptProvider, "images")
+        ? await sendPromptWithDaemonRestartRecovery({ ...promptRequest, provider: promptProvider, images: promptImages })
+        : await sendPromptWithDaemonRestartRecovery(promptRequest satisfies DaemonApiRequestMap["sendPrompt"]);
       if (promptImages.length) {
         refs.threadViews.clearImageAttachments(promptTarget, promptProvider, promptThreadId);
         if (refs.runtime.isThreadSelected(promptTarget, promptProvider, promptThreadId)) setters.setImageAttachments([]);
@@ -168,11 +172,13 @@ export function useComposerSubmission({ state, refs, setters, actions, hiveComma
       }
       if (!observed) {
         refs.runtime.clearTurnTracking(promptTarget, promptProvider, promptThreadId);
+        refs.runtime.saveDraft(promptTarget, promptProvider, promptThreadId, text);
       }
       if (stillSelected) {
         if (observed) {
-          setters.setNotice(`${state.threadProviderName}가 응답 중입니다. 시작 확인이 지연됐지만 응답을 계속 받고 있습니다.`);
+          setters.setNotice("응답을 작성하고 있습니다. 시작 확인이 지연됐지만 응답을 계속 받고 있습니다.");
         } else {
+          setters.setDraft(text);
           setters.setBusy(false);
           setters.setActiveTurnId("");
           setters.setBusySince(null);

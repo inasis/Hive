@@ -1,7 +1,8 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { AssistantProvider, RemoteSkill, TranscriptEntry } from "../../../shared/bridge";
+import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
 import { bridgeRpc } from "../../bridgeClient";
-import type { ConversationRuntime } from "./useConversationRuntime";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -17,7 +18,7 @@ export type ConversationTurnControlsOptions = {
     stoppingTurn: boolean;
     activeTurnId: string;
   };
-  refs: { runtime: ConversationRuntime };
+  refs: { runtime: ConversationRuntimePort };
   setters: {
     setDraft: StateSetter<string>;
     setSteeringPrompt: StateSetter<boolean>;
@@ -34,9 +35,13 @@ export type ConversationTurnControlsOptions = {
 export function useConversationTurnControls({ state, refs, setters, actions }: ConversationTurnControlsOptions) {
   const steerPrompt = async (text: string, skillId?: string): Promise<void> => {
     if (!state.connectedTarget || !state.activeThreadId || !state.busy || state.steeringPrompt || state.stoppingTurn) return;
+    const promptProvider = state.threadProvider;
+    if (!assistantProviderSupports(promptProvider, "turnSteering")) {
+      setters.setNotice(`${state.threadProviderName}은(는) 응답 중 추가 메시지 전달을 지원하지 않습니다. 응답을 중지하거나 끝날 때까지 기다려 주세요.`);
+      return;
+    }
     const promptTarget = state.connectedTarget;
     const promptThreadId = state.activeThreadId;
-    const promptProvider = state.threadProvider;
     refs.runtime.clearDraft(promptTarget, promptProvider, promptThreadId);
     setters.setDraft("");
     setters.setSteeringPrompt(true);

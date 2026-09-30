@@ -1,13 +1,13 @@
 import type { FormEvent, MouseEvent } from "react";
 import type { AssistantProvider, RemoteMode, RemoteModel, RemotePermissionPreset, RemoteThread } from "../../../shared/bridge";
 import { Icon } from "../../shared/Icon";
-import { effortLabel } from "./session-settings-format";
+import { effortLabel } from "../../shared/effort-label";
 import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
 import { providerDisplayName } from "../../shared/provider-display-name";
 import type { ApprovalUiRequest } from "../../shared/bridge-event-adapter";
+import type { SessionSettingsChange } from "./session-settings-types";
 
 type RenameDraft = { threadId: string; provider: AssistantProvider; title: string };
-type ModelUpdate = { model?: string; effort?: string; permissionProfile?: string; modeId?: string };
 type ApprovalAnswer = "decline" | "acceptForSession" | "accept";
 
 export function SessionDialogs({ model, modelActions, rename, renameActions, approval, onAnswerApproval, deletion, deleteActions }: {
@@ -31,7 +31,7 @@ export function SessionDialogs({ model, modelActions, rename, renameActions, app
   };
   modelActions: {
     close: () => void;
-    update: (change: ModelUpdate) => void;
+    update: (change: SessionSettingsChange) => void;
     changeModel: (modelId: string) => void;
   };
   rename: { draft: RenameDraft | null; name: string; error: string; saving: boolean; providerName: string };
@@ -80,7 +80,7 @@ export function SessionDialogs({ model, modelActions, rename, renameActions, app
           {supportsSessionModes && model.modes.length > 0 && <label className="model-control"><span>에이전트</span><select aria-label={`${model.providerName} 세션 모드`} value={model.currentModeId ?? ""} disabled={model.updating || model.busy} onChange={(event) => modelActions.update({ modeId: event.target.value })} title={`${model.providerName} 세션 모드`}>
             {model.modes.map((mode) => <option key={mode.id} value={mode.id}>{mode.name}</option>)}
           </select></label>}
-          {createsWithPermissionProfiles && <p className="dialog-help">시작 권한: {model.permissionProfile ? model.permissionProfile.split(",").map((id) => model.permissionPresets.find((preset) => preset.id === id)?.label ?? id).join(" · ") : `${model.providerName} 기본 승인 흐름`}. 권한 프리셋은 새 세션을 만들 때 설정합니다.</p>}
+          {createsWithPermissionProfiles && !canUpdatePermissionProfiles && <p className="dialog-help">시작 권한: {model.permissionProfile ? model.permissionProfile.split(",").map((id) => model.permissionPresets.find((preset) => preset.id === id)?.label ?? id).join(" · ") : `${model.providerName} 기본 승인 흐름`}. 권한 프리셋은 새 세션을 만들 때 설정합니다.</p>}
           {canUpdatePermissionProfiles && <label className="model-control permission-control"><span>권한</span><select aria-label={`${model.providerName} 권한`} value={model.permissionProfile ?? ""} disabled={model.updating || model.busy} onChange={(event) => {
             const preset = model.permissionPresets.find((candidate) => candidate.id === event.target.value);
             if (preset) modelActions.update({ permissionProfile: preset.id });

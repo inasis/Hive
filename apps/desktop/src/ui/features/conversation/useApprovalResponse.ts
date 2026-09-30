@@ -1,6 +1,8 @@
 import type { Dispatch, SetStateAction } from "react";
+import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
 import type { ApprovalUiRequest } from "../../shared/bridge-event-adapter";
 import { bridgeRpc } from "../../bridgeClient";
+import { providerDisplayName } from "../../shared/provider-display-name";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -19,12 +21,16 @@ export type ApprovalResponseOptions = {
 export function useApprovalResponse({ state, setters }: ApprovalResponseOptions) {
   const answerApproval = async (decision: "accept" | "acceptForSession" | "decline"): Promise<void> => {
     if (!state.approval) return;
+    const provider = state.approval.provider;
     try {
+      if (!assistantProviderSupports(provider, "approvals")) {
+        throw new Error(`${providerDisplayName(provider)} does not support answering approval requests.`);
+      }
       await bridgeRpc.request.answerApproval({
         target: state.connectedTarget,
         requestId: state.approval.requestId,
         decision,
-        provider: state.approval.provider,
+        provider,
       });
     } catch (error) {
       setters.setNotice(errorMessage(error));

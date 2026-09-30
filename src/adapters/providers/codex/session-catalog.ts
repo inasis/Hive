@@ -1,7 +1,7 @@
 import type { CodexCliOpenedSession } from "../../../application/ports/codex-cli.js";
 import type { ProviderCatalogPort, ProviderConnectionCatalog } from "../../../application/ports/provider-catalog.js";
 import type { ProviderSessionPort } from "../../../application/ports/provider-sessions.js";
-import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
+import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadOptions, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
 import type { AssistantThread } from "../../../domain/assistant.js";
 import { discoverCodexSkills } from "./skill-catalog.js";
 import { listCodexThreads, mapCodexSkill, mapCodexThread } from "./mapper.js";
@@ -58,6 +58,7 @@ export class CodexSessionCatalogAdapter implements ProviderCatalogPort, Provider
       }
     }
     session.openedThreadIds.delete(threadId);
+    session.freshThreadIds.delete(threadId);
     session.skillsByThread.delete(threadId);
     session.settingsByThread.delete(threadId);
     if (session.activeThreadId === threadId) delete session.activeThreadId;
@@ -65,10 +66,24 @@ export class CodexSessionCatalogAdapter implements ProviderCatalogPort, Provider
 
   async createThread(target: string, input: ProviderCreateThreadInput): Promise<ProviderCreateThreadResult> {
     const session = await this.context.getOrConnect(target);
-    const started = asObject(await session.api.startThread(input.cwd));
+    const started = asObject(await session.api.startThread(input.cwd, input.ephemeral ? { ephemeral: true } : {}));
     const rawThread = asObject(started?.thread);
     const threadId = firstString(rawThread?.id);
     if (!started || !rawThread || !threadId) throw new Error("Codex returned an invalid thread/start response");
+    if (input.ephemeral && rawThread.ephemeral !== true) {
+      let cleanupError: unknown;
+      try {
+        await session.api.deleteThread(threadId);
+      } catch (error) {
+        cleanupError = error;
+      }
+      throw new Error(
+        cleanupError
+          ? "Codex did not create an ephemeral A2A session, and its persistent fallback could not be deleted"
+          : "Codex app-server does not support ephemeral A2A sessions; refusing to use a persistent thread",
+        cleanupError ? { cause: cleanupError } : undefined,
+      );
+    }
 
     const cwd = firstString(started.cwd, rawThread.cwd, input.cwd) ?? input.cwd;
     const title = firstString(rawThread.name, rawThread.title, rawThread.preview) ?? "새 세션";
@@ -76,10 +91,13 @@ export class CodexSessionCatalogAdapter implements ProviderCatalogPort, Provider
     const reasoningEffort = firstString(started.reasoningEffort) ?? null;
     const permissionProfile = firstString(asObject(started.activePermissionProfile)?.id) ?? null;
     const thread = mapCodexThread({ id: threadId, title, cwd, preview: "", updatedAt: Date.now() });
-    session.activeThreadId = threadId;
+    if (!input.preserveActiveThread) session.activeThreadId = threadId;
     session.openedThreadIds.add(threadId);
+    session.freshThreadIds.add(threadId);
     session.settingsByThread.set(threadId, { model, effort: reasoningEffort, permissionProfile, collaborationMode: "default" });
-    const catalog = await discoverCodexSkills(session.api, target, cwd || undefined);
+    const catalog = input.minimal
+      ? { skills: [], warnings: [] }
+      : await discoverCodexSkills(session.api, target, cwd || undefined);
     session.skillsByThread.set(threadId, catalog);
     return {
       thread,
@@ -92,39 +110,49 @@ export class CodexSessionCatalogAdapter implements ProviderCatalogPort, Provider
       model,
       reasoningEffort,
       permissionProfile,
+      currentModeId: "default",
+      requiresFocusRestoreAfterDelete: !input.preserveActiveThread,
     };
   }
 
-  async openThread(target: string, threadId: string): Promise<ProviderOpenThreadResult> {
+  async openThread(target: string, threadId: string, options: ProviderOpenThreadOptions = { includeTranscript: true }): Promise<ProviderOpenThreadResult> {
     const session = await this.context.getOrConnect(target);
-    const threadRead = await session.api.readThread(threadId);
-    const thread = asObject(threadRead.thread);
+    const isFreshThread = session.freshThreadIds.has(threadId);
+    const threadReadValue = options.includeTranscript && !isFreshThread
+      ? await session.api.readThread(threadId)
+      : await session.api.readThreadMetadata(threadId);
+    const threadRead = asObject(threadReadValue);
+    const thread = asObject(threadRead?.thread);
     if (!thread) throw new Error("Codex returned an invalid thread/read response");
-    const resumed = asObject(await session.api.resumeThread(threadId, { excludeTurns: true }));
-    const resumedThread = asObject(resumed?.thread);
+    const resumed = isFreshThread ? undefined : asObject(await session.api.resumeThread(threadId, { excludeTurns: true }));
+    const resumedThread = isFreshThread ? thread : asObject(resumed?.thread);
     if (!resumedThread) throw new Error("Codex returned an invalid thread/resume response");
 
     const cwd = firstString(resumedThread.cwd, thread.cwd) ?? "";
-    const model = firstString(resumed?.model) ?? session.models.find((candidate) => candidate.isDefault)?.model ?? "";
-    const reasoningEffort = firstString(resumed?.reasoningEffort) ?? null;
-    const permissionProfile = firstString(asObject(resumed?.activePermissionProfile)?.id) ?? null;
+    const knownSettings = session.settingsByThread.get(threadId);
+    const model = firstString(resumed?.model, knownSettings?.model) ?? session.models.find((candidate) => candidate.isDefault)?.model ?? "";
+    const reasoningEffort = firstString(resumed?.reasoningEffort, knownSettings?.effort) ?? null;
+    const permissionProfile = firstString(asObject(resumed?.activePermissionProfile)?.id, knownSettings?.permissionProfile) ?? null;
     session.activeThreadId = threadId;
     session.openedThreadIds.add(threadId);
-    const collaborationMode = firstString(asObject(resumed?.collaborationMode)?.mode) === "plan" ? "plan" : "default";
+    const collaborationMode = firstString(asObject(resumed?.collaborationMode)?.mode, knownSettings?.collaborationMode) === "plan" ? "plan" : "default";
     session.settingsByThread.set(threadId, { model, effort: reasoningEffort, permissionProfile, collaborationMode });
-    const catalog = await discoverCodexSkills(session.api, target, cwd || undefined);
-    session.skillsByThread.set(threadId, catalog);
+    const catalog = options.minimal
+      ? session.skillsByThread.get(threadId) ?? { skills: [], warnings: [] }
+      : await discoverCodexSkills(session.api, target, cwd || undefined);
+    if (!options.minimal) session.skillsByThread.set(threadId, catalog);
     return {
       target,
       threadId,
       title: firstString(resumedThread.name, resumedThread.title, thread.name, thread.title, thread.preview) ?? threadId,
       cwd,
-      entries: mapCodexTranscript(thread),
+      entries: options.includeTranscript && !isFreshThread ? mapCodexTranscript(thread) : [],
       skills: catalog.skills.map(mapCodexSkill),
       skillWarnings: catalog.warnings,
       model,
       reasoningEffort,
       permissionProfile,
+      currentModeId: collaborationMode,
     };
   }
 

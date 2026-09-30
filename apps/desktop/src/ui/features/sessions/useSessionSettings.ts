@@ -1,11 +1,12 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import type { AssistantProvider, RemoteMode, RemoteModel, RemotePermissionPreset } from "../../../shared/bridge";
+import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
 import { bridgeRpc } from "../../bridgeClient";
-import { effortLabel } from "./session-settings-format";
-import type { ProviderCatalogs } from "../connection/provider-catalog-state";
-import type { ThreadViewStore } from "../conversation/thread-view-store";
+import { effortLabel } from "../../shared/effort-label";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
+import type { SessionSettingsChange } from "./session-settings-types";
 
-type SettingsChange = { model?: string; effort?: string; permissionProfile?: string; modeId?: string };
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
 export type SessionSettingsOptions = {
@@ -21,7 +22,7 @@ export type SessionSettingsOptions = {
     permissionPresets: RemotePermissionPreset[];
   };
   refs: {
-    threadViews: ThreadViewStore;
+    threadViews: ThreadViewStorePort;
   };
   setters: {
     setProviderCatalogs: StateSetter<ProviderCatalogs>;
@@ -37,17 +38,40 @@ export type SessionSettingsOptions = {
 export function useSessionSettings({ state, refs, setters }: SessionSettingsOptions) {
   const [updatingSettings, setUpdatingSettings] = useState(false);
 
-  const updateSettings = async (change: SettingsChange): Promise<void> => {
+  const updateSettings = async (change: SessionSettingsChange): Promise<void> => {
     if (!state.connectedTarget || !state.activeThreadId) return;
     setUpdatingSettings(true);
     setters.setNotice(`${state.providerName} 설정을 변경하는 중…`);
     try {
-      const result = await bridgeRpc.request.updateThreadSettings({
+      const requestBase = {
         target: state.connectedTarget,
         threadId: state.activeThreadId,
-        provider: state.provider,
-        ...change,
-      });
+      };
+      const provider = state.provider;
+      let result;
+      if (change.permissionProfile !== undefined) {
+        if (!assistantProviderSupports(provider, "permissionProfileUpdates")) {
+          throw new Error(`${state.providerName} does not support changing permission profiles.`);
+        }
+        result = await bridgeRpc.request.updateThreadSettings({ ...requestBase, provider, permissionProfile: change.permissionProfile });
+      } else if (change.modeId !== undefined) {
+        if (!assistantProviderSupports(provider, "sessionModes")) {
+          throw new Error(`${state.providerName} does not support changing session modes.`);
+        }
+        result = await bridgeRpc.request.updateThreadSettings({ ...requestBase, provider, modeId: change.modeId });
+      } else if (change.effort !== undefined) {
+        if (!assistantProviderSupports(provider, "reasoningEffort")) {
+          throw new Error(`${state.providerName} does not support changing reasoning effort.`);
+        }
+        result = await bridgeRpc.request.updateThreadSettings({
+          ...requestBase,
+          provider,
+          ...(change.model !== undefined ? { model: change.model } : {}),
+          effort: change.effort,
+        });
+      } else {
+        result = await bridgeRpc.request.updateThreadSettings({ ...requestBase, provider, model: change.model });
+      }
       const view = refs.threadViews.get(state.connectedTarget, state.provider, state.activeThreadId);
       if (view) {
         refs.threadViews.update(state.connectedTarget, state.provider, state.activeThreadId, (current) => ({

@@ -2,9 +2,9 @@ import type { TranscriptEntry } from "../../../domain/assistant.js";
 import { asObject, firstString, type JsonObject } from "./session-utils.js";
 
 /** Fold ACP session updates into Hive's stable transcript entry model. */
-export function collectKiroTranscript(entries: TranscriptEntry[], update: JsonObject): void {
+export function collectKiroTranscript(entries: TranscriptEntry[], update: JsonObject, activeTurnId?: string): void {
   const kind = kiroUpdateKind(update);
-  const explicitTurnId = firstString(update.turnId, update.turn_id);
+  const explicitTurnId = activeTurnId ?? firstString(update.turnId, update.turn_id);
   const lastUser = [...entries].reverse().find((entry) => entry.role === "user");
   const lastAssistant = [...entries].reverse().find((entry) => entry.role === "assistant");
   if (explicitTurnId && lastUser) lastUser.turnId = explicitTurnId;
@@ -51,9 +51,10 @@ export function collectKiroTranscript(entries: TranscriptEntry[], update: JsonOb
   }
   if (kind !== "tool_call" && kind !== "tool_call_update") return;
   const id = firstString(update.toolCallId, update.id) ?? `kiro-tool-${entries.length}`;
-  const title = firstString(update.title, update.name) ?? "Kiro tool";
-  const status = firstString(update.status) ?? (kind === "tool_call" ? "inProgress" : "completed");
-  const output = kiroContentText(update.rawOutput ?? update.content ?? update.output);
+  const previous = entries.find((candidate) => candidate.id === id);
+  const title = firstString(update.title, update.name, previous?.command) ?? "Kiro tool";
+  const output = kiroContentText(update.rawOutput ?? update.content ?? update.output) || previous?.output || "";
+  const status = isKiroPermissionFailureOutput(output) ? "failed" : kiroToolStatus(update.status, previous?.status ?? "inProgress");
   const entry: TranscriptEntry = {
     id,
     role: "tool",
@@ -66,6 +67,26 @@ export function collectKiroTranscript(entries: TranscriptEntry[], update: JsonOb
   const previousIndex = entries.findIndex((candidate) => candidate.id === id);
   if (previousIndex >= 0) entries[previousIndex] = entry;
   else entries.push(entry);
+}
+
+/** Convert ACP tool states to the stable status values rendered by Hive. */
+export function kiroToolStatus(value: unknown, fallback = "inProgress"): string {
+  const status = firstString(value);
+  if (!status) return fallback;
+  const normalized = status.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/[ -]/g, "_").toLowerCase();
+  if (normalized === "pending" || normalized === "in_progress" || normalized === "running" || normalized === "started") {
+    return "inProgress";
+  }
+  if (normalized === "completed" || normalized === "complete" || normalized === "success" || normalized === "succeeded") {
+    return "completed";
+  }
+  if (["failed", "error", "denied", "rejected", "blocked"].includes(normalized)) return "failed";
+  if (normalized === "cancelled" || normalized === "canceled") return "completed";
+  return status;
+}
+
+export function isKiroPermissionFailureOutput(output: string): boolean {
+  return /\b(?:permission|authorization)\s+(?:was\s+)?(?:denied|rejected|not granted|insufficient)|\baccess denied\b|\bnot authorized\b|\bunauthorized\b|\bforbidden\b|\bnot allowed\b|\bnot trusted\b|\bapproval (?:was )?(?:denied|rejected|required)\b|\bblocked by (?:the )?(?:policy|sandbox)\b|\b(?:missing|required|insufficient)\s+permissions?\b/i.test(output);
 }
 
 export function kiroUpdateKind(update: JsonObject): string {

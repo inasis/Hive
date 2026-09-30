@@ -1,9 +1,22 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const desktopDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const require = createRequire(import.meta.url);
+let installedPtyModules;
+try {
+  installedPtyModules = dirname(dirname(require.resolve("@lydell/node-pty/package.json")));
+} catch (error) {
+  throw new Error("The workspace install is missing @lydell/node-pty.", { cause: error });
+}
+const stagedPtyModules = resolve(desktopDir, ".hutch/node_modules/@lydell");
+
+rmSync(stagedPtyModules, { recursive: true, force: true });
+mkdirSync(dirname(stagedPtyModules), { recursive: true });
+cpSync(installedPtyModules, stagedPtyModules, { recursive: true });
 
 if (process.platform === "linux") {
   const pkgConfig = spawnSync("pkg-config", ["--cflags", "--libs", "gtk+-3.0"], {

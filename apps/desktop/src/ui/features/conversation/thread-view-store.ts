@@ -1,8 +1,9 @@
 import type { AssistantProvider } from "../../../shared/bridge";
-import { threadViewKey, type LocalImageAttachment, type ThreadView } from "./session-state";
+import { threadViewKey, type LocalImageAttachment, type ThreadView } from "../../shared/conversation-view";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
 
 /** Own cached conversation views and per-thread attachments behind one lifecycle API. */
-export class ThreadViewStore {
+export class ThreadViewStore implements ThreadViewStorePort {
   private readonly views = new Map<string, ThreadView>();
   private readonly imageAttachments = new Map<string, LocalImageAttachment[]>();
 

@@ -1,4 +1,5 @@
 import type { AssistantCommand, ReasoningEffort, TranscriptEntry } from "../../../../../src/domain/assistant.js";
+import type { A2ACommunicationSummaryItem } from "../../../../../src/domain/a2a.js";
 import type { AssistantProvider } from "../../../../../src/domain/provider-catalog.js";
 import type { BridgeEvent } from "../../shared/bridge";
 import { asRecord, displayValue, stringValue } from "./bridge-event-values.js";
@@ -22,6 +23,7 @@ export type ApprovalUiRequest = ApprovalUiDetails & {
 type UiCommand = Omit<AssistantCommand, "provider"> & { provider?: string };
 
 export type UiBridgeEvent =
+  | (EventContext & { type: "threadCreated"; title: string; cwd: string; preview: string; updatedAt: string | number | null })
   | (EventContext & { type: "approvalRequested"; requestId: number | string; approval: ApprovalUiDetails })
   | (EventContext & { type: "threadRenamed"; title: string })
   | (EventContext & { type: "threadDeleted" })
@@ -39,6 +41,7 @@ export type UiBridgeEvent =
   | (EventContext & { type: "commandsUpdated"; commands: UiCommand[] })
   | (EventContext & { type: "transcriptEntriesUpdated"; entries: TranscriptEntry[]; replaceIdPrefix?: string })
   | (EventContext & { type: "assistantMessageCompleted"; turnId: string; messageId: string; text: string })
+  | (EventContext & { type: "a2aCommunicationSummary"; summaryId: string; communications: A2ACommunicationSummaryItem[]; responseTurnId?: string })
   | (EventContext & { type: "warning"; message: string })
   | (EventContext & { type: "terminalReady" })
   | (EventContext & { type: "terminalData"; data: string })
@@ -66,6 +69,13 @@ export function normalizeBridgeEvent(event: BridgeEvent): UiBridgeEvent[] {
   }
 
   switch (event.method) {
+    case "thread/created": {
+      const title = stringValue(params.name)?.trim();
+      const cwd = stringValue(params.cwd)?.trim();
+      if (!title || !cwd) return [];
+      const updatedAt = typeof params.updatedAt === "string" || typeof params.updatedAt === "number" ? params.updatedAt : null;
+      return [{ ...context, type: "threadCreated", title, cwd, preview: stringValue(params.preview) ?? "", updatedAt }];
+    }
     case "thread/name/updated": {
       const title = stringValue(params.name)?.trim();
       return title ? [{ ...context, type: "threadRenamed", title }] : [];
@@ -97,6 +107,13 @@ export function normalizeBridgeEvent(event: BridgeEvent): UiBridgeEvent[] {
         { ...context, type: "turnStarted", ...(rawTurnId ? { turnId: rawTurnId } : {}) },
         ...(text ? [{ ...context, type: "assistantDelta" as const, turnId, messageId, text }] : []),
       ];
+    }
+    case "hive/a2a/communication-summary": {
+      const summaryId = stringValue(params.summaryId);
+      const communications = a2aCommunicationSummaryItems(params.communications);
+      if (!summaryId || !communications) return [];
+      const responseTurnId = stringValue(params.responseTurnId);
+      return [{ ...context, type: "a2aCommunicationSummary", summaryId, communications, ...(responseTurnId ? { responseTurnId } : {}) }];
     }
     case "thread/settings/updated":
       return [{ ...context, type: "threadSettingsUpdated", settings: threadSettings(params.threadSettings) }];
@@ -135,6 +152,28 @@ export function normalizeBridgeEvent(event: BridgeEvent): UiBridgeEvent[] {
   }
 }
 
+function a2aCommunicationSummaryItems(value: unknown): A2ACommunicationSummaryItem[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const communications: A2ACommunicationSummaryItem[] = [];
+  for (const itemValue of value) {
+    const item = asRecord(itemValue);
+    const kind = item?.kind;
+    const taskId = stringValue(item?.taskId);
+    const sourceAgentId = stringValue(item?.sourceAgentId);
+    const message = typeof item?.message === "string" ? item.message : undefined;
+    const sourceSessionName = stringValue(item?.sourceSessionName);
+    if ((kind !== "request" && kind !== "result") || !taskId || !sourceAgentId || message === undefined) return undefined;
+    communications.push({
+      kind,
+      taskId,
+      sourceAgentId,
+      ...(sourceSessionName ? { sourceSessionName } : {}),
+      message,
+    });
+  }
+  return communications;
+}
+
 function approvalDetails(method: string, params: Record<string, unknown>): ApprovalUiDetails {
   const toolCall = asRecord(params.toolCall);
   const kind = method.includes("commandExecution") ? "command" :
@@ -163,7 +202,7 @@ function threadSettings(value: unknown): Extract<UiBridgeEvent, { type: "threadS
   return {
     ...(stringValue(settings.model) ? { model: stringValue(settings.model) } : {}),
     effort: stringValue(settings.effort) ?? null,
-    permissionProfile: stringValue(asRecord(settings.activePermissionProfile)?.id) ?? null,
+    permissionProfile: stringValue(settings.permissionProfile) ?? stringValue(asRecord(settings.activePermissionProfile)?.id) ?? null,
     modeId: stringValue(settings.currentModeId) ?? null,
     ...(reasoning ? { supportedReasoningEfforts: reasoning } : {}),
   };

@@ -4,10 +4,9 @@
   "private": true,
   "description": "Android client for the Hive daemon",
   "scripts": {
-    "build:web": "npm --prefix ../desktop run build:web",
     "add:android": "cap add android",
-    "sync": "npm run build:web && cap sync android",
-    "build": "npm run build:web && (test -d android || cap add android) && node scripts/sync-icons.mjs && cap sync android && node scripts/sync-icons.mjs && cd android && ./gradlew assembleDebug"
+    "sync": "cap sync android",
+    "build": "(test -d android || cap add android) && node scripts/sync-icons.mjs && cap sync android && node scripts/sync-icons.mjs && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
     "@capacitor/android": "^7.4.3",

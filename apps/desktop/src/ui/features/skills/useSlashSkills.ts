@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import type { AssistantProvider, RemoteCommand, RemoteSkill } from "../../../shared/bridge";
 import { bridgeRpc } from "../../bridgeClient";
-import type { SlashMenuItem } from "./slash-menu-types";
-import type { ThreadViewStore } from "../conversation/thread-view-store";
+import type { SlashMenuItem } from "../../shared/slash-menu";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -12,14 +12,14 @@ export type SlashSkillsOptions = {
     activeThreadId: string;
     cwd: string;
     provider: AssistantProvider;
-    activePage: "sessions" | "skills" | "settings";
+    activePage: "sessions" | "settings";
     activeTab: "chat" | "terminal" | `file:${string}`;
     draft: string;
     skills: RemoteSkill[];
     slashCommands: RemoteCommand[];
   };
   refs: {
-    threadViews: ThreadViewStore;
+    threadViews: ThreadViewStorePort;
   };
   setters: {
     setSkills: StateSetter<RemoteSkill[]>;

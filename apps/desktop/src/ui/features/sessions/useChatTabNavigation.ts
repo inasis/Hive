@@ -1,8 +1,8 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { AssistantProvider, RemoteThread } from "../../../shared/bridge";
-import type { SideChatTab, ThreadView } from "../conversation/session-state";
-import type { ThreadViewStore } from "../conversation/thread-view-store";
-import type { WorkspaceTab } from "../workspace/workspace-types";
+import type { SideChatTab, ThreadView } from "../../shared/conversation-view";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
+import type { WorkspaceTab } from "../../shared/workspace-state";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -14,7 +14,7 @@ export type ChatTabNavigationOptions = {
     activeTab: WorkspaceTab;
     threads: RemoteThread[];
   };
-  refs: { threadViews: ThreadViewStore };
+  refs: { threadViews: ThreadViewStorePort };
   setters: {
     setSideChats: StateSetter<SideChatTab[]>;
     setActiveSideChatId: StateSetter<string>;

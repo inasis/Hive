@@ -1,3 +1,6 @@
+import type { TranscriptEntry } from "../../../domain/assistant.js";
+import { providerA2ASummaryEntryId, providerPromptTranscript } from "../a2a-prompt-context.js";
+
 /** Converts OpenCode session/message DTOs into Hive conversation records. */
 export type OpenCodeSessionInfo = {
   id: string;
@@ -59,29 +62,30 @@ export function mapOpenCodeSession(session: OpenCodeSessionInfo): {
   };
 }
 
-export function mapOpenCodeTranscript(messages: OpenCodeMessage[]): {
-  id: string;
-  role: "user" | "assistant" | "tool" | "change";
-  text: string;
-  turnId?: string;
-  providerMessageId?: string;
-  responseCompleted?: boolean;
-  toolType?: "commandExecution" | "mcpToolCall" | "webSearch";
-  command?: string;
-  output?: string;
-  status?: string;
-}[] {
-  const entries: ReturnType<typeof mapOpenCodeTranscript> = [];
+export function mapOpenCodeTranscript(messages: OpenCodeMessage[]): TranscriptEntry[] {
+  const entries: TranscriptEntry[] = [];
   let currentTurnId = "";
   for (const [messageIndex, message] of messages.entries()) {
     const messageId = typeof message.info?.id === "string" ? message.info.id : `message-${messageIndex}`;
     if (message.info?.role === "user") currentTurnId = messageId;
     if (message.info?.role === "user" || message.info?.role === "assistant") {
-      const text = openCodeMessageText(message);
-      const turnId = message.info.role === "assistant" ? currentTurnId || messageId : undefined;
+      const rawText = openCodeMessageText(message);
+      const turnId = message.info.role === "user" ? messageId : currentTurnId || messageId;
       const responseCompleted = message.info.role !== "assistant" ||
         (typeof message.info.time?.completed === "number" && message.info.time.completed > 0) || Boolean(message.info.finish);
-      if (text) entries.push({ id: messageId, ...(turnId ? { turnId } : {}), providerMessageId: messageId, role: message.info.role, text, responseCompleted });
+      if (message.info.role === "user") {
+        const prompt = providerPromptTranscript(rawText);
+        if (prompt.text) entries.push({ id: messageId, turnId, providerMessageId: messageId, role: "user", text: prompt.text, responseCompleted });
+        if (prompt.communications.length) entries.push({
+          id: providerA2ASummaryEntryId(prompt.communications),
+          role: "communication",
+          text: "",
+          turnId,
+          communications: prompt.communications,
+        });
+      } else if (rawText) {
+        entries.push({ id: messageId, turnId, providerMessageId: messageId, role: "assistant", text: rawText, responseCompleted });
+      }
     }
     for (const [partIndex, partValue] of (Array.isArray(message.parts) ? message.parts : []).entries()) {
       const part = asObject(partValue);

@@ -1,6 +1,6 @@
 import type { CodexArchiveStoragePort, CodexCliOpenedSession, CodexCliPort, CodexCliSessionPort, CodexCliThreadRecord } from "../ports/codex-cli.js";
-import type { AvailableSkill } from "../ports/skills.js";
-import { validateThreadId } from "./provider-sessions.js";
+import type { AvailableSkill, SkillInputPreparation, SkillSelection } from "../ports/skills.js";
+import { validateThreadId as validateThreadIdValue } from "../validation/thread-id.js";
 
 /** Codex-specific CLI workflows, independent of app-server and filesystem APIs. */
 export class CodexCliUseCases {
@@ -17,7 +17,7 @@ export class CodexCliUseCases {
   }
 
   async importThread(target: string, threadId: string, options: { cwd?: string; outDir?: string }): Promise<string> {
-    validateThreadId(threadId);
+    validateThreadIdValue(threadId);
     const snapshot = await this.codex.readThreadForArchive(target, threadId);
     const filePath = await this.archives.save({
       format: "hive-codex-archive/v1",
@@ -38,34 +38,40 @@ export class CodexCliUseCases {
 export class CodexCliSessionUseCases {
   constructor(private readonly codex: CodexCliPort, private readonly sessions: CodexCliSessionPort) {}
 
+  validateThreadId(threadId: string): void {
+    validateThreadIdValue(threadId);
+  }
+
   validateTarget(target: string): void {
     this.codex.validateTarget(target);
   }
 
   openSession(target: string, threadId: string): Promise<CodexCliOpenedSession> {
-    validateThreadId(threadId);
+    this.validateThreadId(threadId);
     return this.sessions.openSession(target, threadId);
   }
 
-  async buildSkillInput(target: string, threadId: string, selector: string, request: string): Promise<{ inputText: string; skill: AvailableSkill }> {
-    validateThreadId(threadId);
+  async buildSkillInput(target: string, threadId: string, selection: SkillSelection, request: string): Promise<SkillInputPreparation> {
+    this.validateThreadId(threadId);
     const catalog = await this.sessions.listCliSkills(target, threadId);
-    const skill = resolveSkill(catalog.skills, selector);
-    if (!skill) throw new Error(`No available skill named '${selector}'. Use /skills to browse.`);
-    if (!skill.enabled) throw new Error(`The '${skill.name}' skill is disabled.`);
-    return { inputText: await this.sessions.buildSkillInput(target, threadId, skill, request), skill };
+    const resolution = resolveSkill(catalog.skills, selection);
+    if (resolution.status !== "selected") return resolution;
+    if (!resolution.skill.enabled) return { status: "disabled", skill: resolution.skill };
+    return {
+      status: "ready",
+      inputText: await this.sessions.buildSkillInput(target, threadId, resolution.skill, request),
+      skill: resolution.skill,
+    };
   }
 }
 
-function resolveSkill(skills: AvailableSkill[], selector: string): AvailableSkill | undefined {
-  const [prefix, ...nameParts] = selector.split(":");
-  const provider = prefix?.toLowerCase();
-  const qualifiedProvider = ["codex", "pi", "shared"].includes(provider ?? "") ? provider : undefined;
-  const name = qualifiedProvider ? nameParts.join(":") : selector;
-  const matches = skills.filter((skill) => skill.name === name && (!qualifiedProvider || skill.provider.toLowerCase() === qualifiedProvider));
+function resolveSkill(skills: AvailableSkill[], selection: SkillSelection):
+  | { status: "selected"; skill: AvailableSkill }
+  | Exclude<SkillInputPreparation, { status: "ready" | "disabled" }> {
+  const matches = skills.filter((skill) => skill.name === selection.name && (!selection.provider || skill.provider === selection.provider));
   if (matches.length > 1) {
-    const choices = matches.map((skill) => `/skill:${skill.provider.toLowerCase()}:${skill.name}`).join("  ");
-    throw new Error(`Skill name '${name}' is ambiguous. Choose ${choices}`);
+    return { status: "ambiguous", name: selection.name, skills: matches };
   }
-  return matches[0];
+  const skill = matches[0];
+  return skill ? { status: "selected", skill } : { status: "notFound" };
 }

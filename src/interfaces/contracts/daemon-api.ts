@@ -1,4 +1,10 @@
-import type { AssistantProvider, AssistantProviderInfo } from "../../domain/provider-catalog.js";
+import type {
+  AssistantProvider,
+  AssistantProviderCapability,
+  AssistantProviderInfo,
+  AssistantProvidersWithCapability,
+  DefaultAssistantProvider,
+} from "../../domain/provider-catalog.js";
 import type { AssistantCommand, AssistantModel, AssistantPermissionPreset, AssistantSkill, AssistantThread, PromptImageAttachment } from "../../domain/assistant.js";
 import type { WorkspaceFileListing, WorkspaceFileText } from "../../domain/workspace.js";
 import type { ProviderCreateThreadResult, ProviderOpenThreadResult } from "../../application/ports/provider-conversations.js";
@@ -7,7 +13,6 @@ import type { ProviderCommandResult } from "../../application/ports/provider-com
 import type { ProviderInterruptResult, ProviderPromptResult, ProviderSteerResult } from "../../application/ports/provider-turns.js";
 import type { ProviderThreadSettingsResult } from "../../application/ports/provider-settings.js";
 import type { ProviderApprovalResult } from "../../application/ports/provider-approvals.js";
-import { isAssistantProvider } from "../../domain/provider-catalog.js";
 
 export type { WorkspaceFileItem, WorkspaceFileListing, WorkspaceFileText } from "../../domain/workspace.js";
 
@@ -49,27 +54,67 @@ export type SharedDaemonApiMethod = Exclude<DaemonApiMethod, ProviderDaemonApiMe
 
 type ProviderRequest = { target: string; provider?: AssistantProvider };
 type ThreadRequest = ProviderRequest & { threadId: string };
+type ProviderCapabilityRequirements<Fields extends object> = Partial<{
+  [Key in keyof Fields]: AssistantProviderCapability;
+}>;
+type ProviderFieldsFor<
+  Provider extends AssistantProvider,
+  Fields extends object,
+  Requirements extends ProviderCapabilityRequirements<Fields>,
+> = Omit<Fields, keyof Requirements> & {
+  [Key in keyof Requirements]?: [Provider] extends [AssistantProvidersWithCapability<Extract<Requirements[Key], AssistantProviderCapability>>]
+    ? Fields[Key & keyof Fields]
+    : never;
+};
+type CapabilityAwareProviderRequest<
+  Fields extends object,
+  Requirements extends ProviderCapabilityRequirements<Fields>,
+> =
+  | (ProviderRequest & ProviderFieldsFor<AssistantProvider, Fields, Requirements>)
+  | {
+      [Provider in AssistantProvider]: Omit<ProviderRequest, "provider"> & { provider: Provider } &
+        ProviderFieldsFor<Provider, Fields, Requirements>
+    }[AssistantProvider]
+  | (Omit<ProviderRequest, "provider"> & { provider?: DefaultAssistantProvider } &
+      ProviderFieldsFor<DefaultAssistantProvider, Fields, Requirements>);
+type ProviderCapabilityRequest<Capability extends AssistantProviderCapability, Fields extends object> =
+  | (Omit<ProviderRequest, "provider"> & { provider: AssistantProvidersWithCapability<Capability> } & Fields)
+  | (DefaultAssistantProvider extends AssistantProvidersWithCapability<Capability>
+      ? Omit<ProviderRequest, "provider"> & { provider?: DefaultAssistantProvider } & Fields
+      : never);
 
 /** Exact request DTOs for every method crossing a daemon/bridge boundary. */
 export type DaemonApiRequestMap = {
   listProviders: {};
   connect: ProviderRequest;
   refresh: ProviderRequest;
-  createThread: ProviderRequest & { cwd: string; name?: string; permissionPresets?: string[] };
+  createThread: CapabilityAwareProviderRequest<
+    { cwd: string; name?: string; permissionPresets?: string[] },
+    { name: "createNamedSessions"; permissionPresets: "permissionProfileCreation" }
+  >;
   renameThread: ThreadRequest & { name: string };
   deleteThread: ThreadRequest;
-  openThread: ThreadRequest;
+  openThread: ThreadRequest & { includeTranscript?: boolean };
   forkSideThread: ThreadRequest;
   forkThread: ThreadRequest & { name: string; turnId?: string; messageId?: string };
   listSkills: ThreadRequest & { cwd?: string };
   listCommands: ThreadRequest & { cwd?: string };
   runCommand: ThreadRequest & { command: string; arguments?: string; cwd?: string };
-  sendPrompt: ThreadRequest & { text: string; skillId?: string; cwd?: string; images?: PromptImageAttachment[] };
-  steerTurn: ThreadRequest & { turnId: string; text: string; skillId?: string; cwd?: string };
+  sendPrompt: CapabilityAwareProviderRequest<
+    { threadId: string; text: string; skillId?: string; cwd?: string; images?: PromptImageAttachment[] },
+    { images: "images" }
+  >;
+  steerTurn: ProviderCapabilityRequest<"turnSteering", { threadId: string; turnId: string; text: string; skillId?: string; cwd?: string }>;
   interruptTurn: ThreadRequest & { turnId: string };
-  updateThreadSettings: ThreadRequest & { model?: string; effort?: string; permissionProfile?: string; modeId?: string };
+  updateThreadSettings: CapabilityAwareProviderRequest<
+    { threadId: string; model?: string; effort?: string; permissionProfile?: string; modeId?: string },
+    { effort: "reasoningEffort"; permissionProfile: "permissionProfileUpdates"; modeId: "sessionModes" }
+  >;
   disconnect: ProviderRequest;
-  answerApproval: ProviderRequest & { requestId: number | string; decision: "accept" | "acceptForSession" | "decline" };
+  answerApproval: ProviderCapabilityRequest<
+    "approvals",
+    { requestId: number | string; decision: "accept" | "acceptForSession" | "decline" }
+  >;
   terminalStart: { target: string; cwd: string; sessionId: string; cols: number; rows: number };
   terminalInput: { target: string; sessionId: string; data: string };
   terminalResize: { target: string; sessionId: string; cols: number; rows: number };
@@ -122,133 +167,4 @@ export function isDaemonApiMethod(method: string): method is DaemonApiMethod {
 
 export function isProviderDaemonApiMethod(method: string): method is ProviderDaemonApiMethod {
   return PROVIDER_DAEMON_API_METHODS.has(method);
-}
-
-type FieldRule = "string" | "number" | "provider" | "string-array" | "images" | "request-id" | "approval-decision";
-type OptionalKeys<T extends object> = {
-  [Key in keyof T]-?: {} extends Pick<T, Key> ? Key : never;
-}[keyof T];
-type RequiredKeys<T extends object> = Exclude<keyof T, OptionalKeys<T>>;
-type FieldRuleFor<Value> =
-  [NonNullable<Value>] extends [PromptImageAttachment[]] ? "images" :
-  [NonNullable<Value>] extends [string[]] ? "string-array" :
-  [NonNullable<Value>] extends [AssistantProvider] ? "provider" :
-  [NonNullable<Value>] extends ["accept" | "acceptForSession" | "decline"] ? "approval-decision" :
-  [NonNullable<Value>] extends [number] ? "number" :
-  [NonNullable<Value>] extends [string] ? "string" :
-  [NonNullable<Value>] extends [string | number] ? "request-id" :
-  never;
-type RequestShapeFor<Params extends object> = {
-  required: { [Key in RequiredKeys<Params>]: FieldRuleFor<Params[Key]> };
-  optional: { [Key in OptionalKeys<Params>]-?: FieldRuleFor<Params[Key]> };
-};
-
-const REQUEST_SHAPES = {
-  listProviders: { required: {}, optional: {} },
-  connect: { required: { target: "string" }, optional: { provider: "provider" } },
-  refresh: { required: { target: "string" }, optional: { provider: "provider" } },
-  createThread: {
-    required: { target: "string", cwd: "string" },
-    optional: { provider: "provider", name: "string", permissionPresets: "string-array" },
-  },
-  renameThread: {
-    required: { target: "string", threadId: "string", name: "string" },
-    optional: { provider: "provider" },
-  },
-  deleteThread: { required: { target: "string", threadId: "string" }, optional: { provider: "provider" } },
-  openThread: { required: { target: "string", threadId: "string" }, optional: { provider: "provider" } },
-  forkSideThread: { required: { target: "string", threadId: "string" }, optional: { provider: "provider" } },
-  forkThread: {
-    required: { target: "string", threadId: "string", name: "string" },
-    optional: { provider: "provider", turnId: "string", messageId: "string" },
-  },
-  listSkills: { required: { target: "string", threadId: "string" }, optional: { provider: "provider", cwd: "string" } },
-  listCommands: { required: { target: "string", threadId: "string" }, optional: { provider: "provider", cwd: "string" } },
-  runCommand: {
-    required: { target: "string", threadId: "string", command: "string" },
-    optional: { provider: "provider", arguments: "string", cwd: "string" },
-  },
-  sendPrompt: {
-    required: { target: "string", threadId: "string", text: "string" },
-    optional: { provider: "provider", skillId: "string", cwd: "string", images: "images" },
-  },
-  steerTurn: {
-    required: { target: "string", threadId: "string", turnId: "string", text: "string" },
-    optional: { provider: "provider", skillId: "string", cwd: "string" },
-  },
-  interruptTurn: {
-    required: { target: "string", threadId: "string", turnId: "string" },
-    optional: { provider: "provider" },
-  },
-  updateThreadSettings: {
-    required: { target: "string", threadId: "string" },
-    optional: { provider: "provider", model: "string", effort: "string", permissionProfile: "string", modeId: "string" },
-  },
-  disconnect: { required: { target: "string" }, optional: { provider: "provider" } },
-  answerApproval: {
-    required: { target: "string", requestId: "request-id", decision: "approval-decision" },
-    optional: { provider: "provider" },
-  },
-  terminalStart: {
-    required: { target: "string", cwd: "string", sessionId: "string", cols: "number", rows: "number" },
-    optional: {},
-  },
-  terminalInput: {
-    required: { target: "string", sessionId: "string", data: "string" },
-    optional: {},
-  },
-  terminalResize: {
-    required: { target: "string", sessionId: "string", cols: "number", rows: "number" },
-    optional: {},
-  },
-  terminalStop: { required: { target: "string", sessionId: "string" }, optional: {} },
-  listWorkspaceFiles: { required: { target: "string", cwd: "string", path: "string" }, optional: {} },
-  readWorkspaceFile: { required: { target: "string", cwd: "string", path: "string" }, optional: {} },
-} as const satisfies { [Method in DaemonApiMethod]: RequestShapeFor<DaemonApiRequestMap[Method]> };
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
-}
-
-function validateField(value: unknown, rule: FieldRule, field: string): void {
-  if (rule === "string" && typeof value !== "string") throw new Error(`${field} must be a string`);
-  if (rule === "number" && (typeof value !== "number" || !Number.isFinite(value))) throw new Error(`${field} must be a finite number`);
-  if (rule === "provider" && !isAssistantProvider(value)) throw new Error(`${field} is not a supported assistant provider`);
-  if (rule === "string-array" && (!Array.isArray(value) || value.some((item) => typeof item !== "string"))) throw new Error(`${field} must be a list of strings`);
-  if (rule === "request-id" && !((typeof value === "string" && value.length > 0) || (typeof value === "number" && Number.isFinite(value)))) throw new Error(`${field} must be a string or finite number`);
-  if (rule === "approval-decision" && value !== "accept" && value !== "acceptForSession" && value !== "decline") throw new Error(`${field} is not a supported approval decision`);
-  if (rule === "images") {
-    if (!Array.isArray(value) || value.some((item) => {
-      const image = asRecord(item);
-      if (!image) return true;
-      const fields = Object.keys(image);
-      return fields.some((field) => field !== "name" && field !== "mimeType" && field !== "data") ||
-        !Object.hasOwn(image, "name") || typeof image.name !== "string" ||
-        !Object.hasOwn(image, "mimeType") || typeof image.mimeType !== "string" ||
-        !Object.hasOwn(image, "data") || typeof image.data !== "string";
-    })) throw new Error(`${field} must contain valid image attachments`);
-  }
-}
-
-/** Validate untrusted JSON at the public daemon API boundary before dispatch. */
-export function parseDaemonApiRequest(method: string, value: unknown): DaemonApiRequest {
-  if (!isDaemonApiMethod(method)) throw new Error("Unsupported daemon request");
-  const params = asRecord(value);
-  if (!params) throw new Error("Daemon request params must be an object");
-  const shape = REQUEST_SHAPES[method];
-  const recognizedFields = new Set([...Object.keys(shape.required), ...Object.keys(shape.optional)]);
-  for (const field of Object.keys(params)) {
-    if (!recognizedFields.has(field)) throw new Error(`${field} is not supported for ${method}`);
-  }
-  for (const [field, rule] of Object.entries(shape.required)) {
-    if (!Object.hasOwn(params, field)) throw new Error(`${field} is required`);
-    validateField(params[field], rule, field);
-  }
-  for (const [field, rule] of Object.entries(shape.optional)) {
-    if (Object.hasOwn(params, field)) validateField(params[field], rule, field);
-  }
-  // The schema is statically checked against every request DTO above, then validated at runtime.
-  return { method, params } as DaemonApiRequest;
 }

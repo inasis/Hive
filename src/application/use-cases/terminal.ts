@@ -19,8 +19,4 @@ export class TerminalUseCases {
   stop(target: string, sessionId: string): void {
     this.terminal.stop(target, sessionId);
   }
-
-  stopForTarget(target: string): void {
-    this.terminal.stopTarget(target);
-  }
 }

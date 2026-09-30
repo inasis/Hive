@@ -1,11 +1,12 @@
 import { useState } from "react";
 import type { AssistantProvider } from "../../../shared/bridge";
-import { runningThreadKey, threadViewKey } from "./session-state";
+import { runningThreadKey, threadViewKey } from "../../shared/conversation-view";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
 
 type ActiveThreadContext = { target: string; threadId: string; provider: AssistantProvider };
 
 /** Own target-scoped drafts and turn lifecycle data shared by conversation features. */
-export class ConversationRuntime {
+export class ConversationRuntime implements ConversationRuntimePort {
   private readonly drafts = new Map<string, string>();
   private readonly runningThreads = new Map<string, number>();
   private readonly runningTurnIds = new Map<string, string>();

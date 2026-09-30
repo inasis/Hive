@@ -1,6 +1,7 @@
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
 import type { ProviderSessionPorts } from "../ports/provider-sessions.js";
-import { requireProviderCapability } from "./provider-capability.js";
+import { requireProviderCapability } from "../policies/provider-capability.js";
+import { validateThreadId } from "../validation/thread-id.js";
 
 /** Provider neutral validation and dispatch for session rename and deletion. */
 export class ProviderSessionUseCases {
@@ -19,8 +20,4 @@ export class ProviderSessionUseCases {
     validateThreadId(threadId);
     return this.providers[provider].deleteThread(target, threadId);
   }
-}
-
-export function validateThreadId(threadId: string): void {
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(threadId)) throw new Error("Thread ID contains unsupported characters");
 }

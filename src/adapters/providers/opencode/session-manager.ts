@@ -1,6 +1,6 @@
 import type { ProviderCatalogPort, ProviderConnectionCatalog } from "../../../application/ports/provider-catalog.js";
 import type { ProviderSessionPort } from "../../../application/ports/provider-sessions.js";
-import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
+import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadOptions, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
 import type { ProviderForkPort, ProviderForkThreadInput, ProviderForkThreadResult, ProviderSideConversationResult } from "../../../application/ports/provider-forks.js";
 import type { ProviderSkillsPort, ProviderSkillCatalog } from "../../../application/ports/provider-skills.js";
 import type { ProviderCommandsPort, ProviderCommandCatalog, ProviderCommandResult } from "../../../application/ports/provider-commands.js";
@@ -31,7 +31,7 @@ export class OpenCodeSessionManager implements ProviderCatalogPort, ProviderSess
   refresh(target: string) { return this.catalog.refresh(target); }
   disconnect(target: string): Promise<void> { return this.catalog.disconnect(target); }
   createThread(target: string, input: ProviderCreateThreadInput): Promise<ProviderCreateThreadResult> { return this.catalog.createThread(target, input); }
-  openThread(target: string, threadId: string): Promise<ProviderOpenThreadResult> { return this.catalog.openThread(target, threadId); }
+  openThread(target: string, threadId: string, options?: ProviderOpenThreadOptions): Promise<ProviderOpenThreadResult> { return this.catalog.openThread(target, threadId, options); }
   renameThread(target: string, threadId: string, name: string): Promise<void> { return this.catalog.renameThread(target, threadId, name); }
   deleteThread(target: string, threadId: string): Promise<void> { return this.catalog.deleteThread(target, threadId); }
   forkSideThread(target: string, threadId: string): Promise<ProviderSideConversationResult> { return this.forks.forkSideThread(target, threadId); }
@@ -39,6 +39,7 @@ export class OpenCodeSessionManager implements ProviderCatalogPort, ProviderSess
   listSkills(target: string, threadId: string, cwd?: string): Promise<ProviderSkillCatalog> { return this.commands.listSkills(target, threadId, cwd); }
   listCommands(target: string, threadId: string, cwd?: string): Promise<ProviderCommandCatalog> { return this.commands.listCommands(target, threadId, cwd); }
   runCommand(target: string, threadId: string, command: string, argumentsText: string): Promise<ProviderCommandResult> { return this.commands.runCommand(target, threadId, command, argumentsText); }
+  assertPromptReady(target: string, threadId: string): Promise<void> { return this.turns.assertPromptReady(target, threadId); }
   sendPrompt(target: string, threadId: string, input: ProviderPromptInput): Promise<ProviderPromptResult> { return this.turns.sendPrompt(target, threadId, input); }
   steerTurn(target: string, threadId: string, turnId: string, input: ProviderSteerInput): Promise<ProviderSteerResult> { return this.turns.steerTurn(target, threadId, turnId, input); }
   interruptTurn(target: string, threadId: string, turnId: string): Promise<ProviderInterruptResult> { return this.turns.interruptTurn(target, threadId, turnId); }

@@ -1,7 +1,7 @@
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
 import type { ProviderForkPorts, ProviderForkThreadInput, ProviderForkThreadResult, ProviderSideConversationResult } from "../ports/provider-forks.js";
-import { requireProviderCapability } from "./provider-capability.js";
-import { validateThreadId } from "./provider-sessions.js";
+import { requireProviderCapability } from "../policies/provider-capability.js";
+import { validateThreadId } from "../validation/thread-id.js";
 
 /** Validate shared branch-session input and dispatch to the selected provider adapter. */
 export class ProviderForkUseCases {

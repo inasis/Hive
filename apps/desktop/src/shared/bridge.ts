@@ -79,6 +79,7 @@ export type HiveBridgeSchema = {
         { action: "state" | "minimize" | "toggleMaximize" | "close" },
         { maximized: boolean }
       >;
+      getHostPlatform: Request<{}, { platform: string }>;
       getWindowFrame: Request<{}, { x: number; y: number; width: number; height: number; maximized: boolean }>;
       getGtkSettings: Request<{}, GtkSettings>;
       setWindowFrame: Request<{ x: number; y: number; width: number; height: number }, { resized: true }>;

@@ -12,7 +12,7 @@ export function printThreads(threads: CodexCliThreadRecord[]): string {
 
 export function printHelp(defaultArchiveDirectory: string): string {
   return [
-    "Hive Codex Bridge — access Codex CLI sessions over SSH or a TCP relay",
+    "Hive — browse and resume Codex CLI sessions over SSH or a TCP relay",
     "",
     "Usage:",
     "  hive list <ssh-target-or-relay-uri> [--cwd <remote-path>] [--limit <1..500>] [--json]",

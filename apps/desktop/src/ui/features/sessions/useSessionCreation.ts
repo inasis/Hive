@@ -4,8 +4,9 @@ import { assistantProviderSupports } from "../../../../../../src/domain/provider
 import { bridgeRpc } from "../../bridgeClient";
 import { providerDisplayName } from "../../shared/provider-display-name";
 import type { ApprovalUiRequest } from "../../shared/bridge-event-adapter";
-import { upsertProviderThreads, type ThreadView } from "../conversation/session-state";
-import type { ProviderCatalogs } from "../connection/provider-catalog-state";
+import { upsertProviderThreads } from "../../shared/provider-thread-state";
+import type { ThreadView } from "../../shared/conversation-view";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -90,16 +91,22 @@ export function useSessionCreation({ state, platform, setters, actions }: Sessio
 
     actions.cacheActiveThreadView();
     setCreatingSession(true);
-    setters.setNotice(`워크스페이스에서 새 ${providerDisplayName(state.assistantProvider)} 세션을 만드는 중…`);
+    setters.setNotice(`작업 공간에서 새 ${providerDisplayName(state.assistantProvider)} 세션을 만드는 중…`);
     try {
       const provider = state.assistantProvider;
-      const result = await bridgeRpc.request.createThread({
-        target: state.connectedTarget,
-        cwd: workspacePath,
-        provider,
-        ...(sessionName && assistantProviderSupports(provider, "createNamedSessions") ? { name: sessionName } : {}),
-        ...(assistantProviderSupports(provider, "permissionProfileCreation") && newPermissionPresets.length ? { permissionPresets: newPermissionPresets } : {}),
-      });
+      const createRequest = { target: state.connectedTarget, cwd: workspacePath, provider };
+      const result = await (() => {
+        if (sessionName && assistantProviderSupports(provider, "createNamedSessions")) {
+          if (newPermissionPresets.length && assistantProviderSupports(provider, "permissionProfileCreation")) {
+            return bridgeRpc.request.createThread({ ...createRequest, provider, name: sessionName, permissionPresets: newPermissionPresets });
+          }
+          return bridgeRpc.request.createThread({ ...createRequest, provider, name: sessionName });
+        }
+        if (newPermissionPresets.length && assistantProviderSupports(provider, "permissionProfileCreation")) {
+          return bridgeRpc.request.createThread({ ...createRequest, provider, permissionPresets: newPermissionPresets });
+        }
+        return bridgeRpc.request.createThread(createRequest);
+      })();
       if (result.models) {
         setters.setProviderCatalogs((current) => ({
           ...current,

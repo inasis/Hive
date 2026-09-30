@@ -2,10 +2,13 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
 import type { AssistantProvider, RemoteThread, TranscriptEntry } from "../../../shared/bridge";
 import { bridgeRpc } from "../../bridgeClient";
-import { upsertProviderThreads, type SideChatTab, type ThreadView } from "../conversation/session-state";
-import type { ThreadViewStore } from "../conversation/thread-view-store";
-import type { WorkspaceTab } from "../workspace/workspace-types";
-import type { ProviderCatalogs } from "../connection/provider-catalog-state";
+import { hiveTranscriptCache } from "../../shared/hive-transcript-cache";
+import { latestTranscriptEntries } from "../../shared/transcript-groups";
+import { upsertProviderThreads } from "../../shared/provider-thread-state";
+import type { SideChatTab, ThreadView } from "../../shared/conversation-view";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
+import type { WorkspaceTab } from "../../shared/workspace-state";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -20,7 +23,7 @@ export type ResponseForkOptions = {
     busy: boolean;
     openingThread: boolean;
   };
-  refs: { threadViews: ThreadViewStore };
+  refs: { threadViews: ThreadViewStorePort };
   setters: {
     setThreads: StateSetter<RemoteThread[]>;
     setProviderCatalogs: StateSetter<ProviderCatalogs>;
@@ -78,7 +81,7 @@ export function useResponseFork({ state, refs, setters, actions }: ResponseForkO
           [state.threadProvider]: { ...current[state.threadProvider], models: opened.models!, warning: opened.modelWarning ?? "" },
         }));
       }
-      const view: ThreadView = {
+      const fullView: ThreadView = {
         target: state.connectedTarget,
         threadId: opened.threadId,
         provider: state.threadProvider,
@@ -93,6 +96,8 @@ export function useResponseFork({ state, refs, setters, actions }: ResponseForkO
         skills: opened.skills,
         skillWarnings: opened.skillWarnings,
       };
+      await hiveTranscriptCache.replaceAll(fullView, forked.updatedAt);
+      const view: ThreadView = { ...fullView, entries: latestTranscriptEntries(fullView.entries, 20) };
       refs.threadViews.set(view);
       setters.setThreads((current) => upsertProviderThreads(current, [{ ...forkedThread, title: opened.title, cwd: opened.cwd }], state.threadProvider));
       const rootThreadId = state.activeSideChat?.rootThreadId ?? state.activeThreadId;

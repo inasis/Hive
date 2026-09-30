@@ -1,8 +1,24 @@
 import type { FormEvent } from "react";
 import type { AssistantProvider, AssistantProviderInfo } from "../../../../../../src/domain/provider-catalog.js";
 import { Icon } from "../../shared/Icon";
-import { isRelayWorkspaceTarget } from "../connection/workspace-target-label";
-import type { ConnectionPresentation, ThemeMode } from "./settings-types";
+import { isRelayWorkspaceTarget } from "../../shared/workspace-target-label";
+import type { ThemeMode } from "./settings-types";
+import type { ConnectionPresentation } from "../../shared/connection-presentation";
+
+export function McpSettingsPage() {
+  return <section className="feature-page settings-page mcp-settings-page">
+    <div className="feature-heading"><span className="eyebrow">SETTINGS / MCP</span><h1>MCP</h1><p>Hive A2A MCP 도구 연결 정보를 확인합니다.</p></div>
+    <section className="settings-panel mcp-settings-panel" aria-labelledby="hive-mcp-title">
+      <div className="settings-panel-heading"><div><span className="eyebrow">BUILT-IN SERVER</span><h2 id="hive-mcp-title">Hive A2A MCP</h2></div></div>
+      <p className="mcp-settings-description">Hive 데몬은 지원되는 Codex, OpenCode, Kiro 세션에 에이전트 검색과 작업 위임 도구를 제공합니다.</p>
+      <div className="mcp-tool-list" aria-label="제공 도구">
+        <article className="mcp-tool-card"><code>a2a_list_agents</code><p>현재 Hive room에서 사용할 수 있는 에이전트를 조회합니다.</p></article>
+        <article className="mcp-tool-card"><code>a2a_send</code><p>다른 세션에 비동기 작업을 보내고, 완료 결과를 원래 요청자에게 돌려줍니다.</p></article>
+      </div>
+      <p className="mcp-settings-note">도구 노출 여부는 provider 연결 방식, 세션 권한, MCP 주입 지원 여부에 따라 달라집니다.</p>
+    </section>
+  </section>;
+}
 
 export function ThemeSettingsPage({ theme, onToggleTheme }: {
   theme: ThemeMode;

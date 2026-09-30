@@ -10,9 +10,9 @@ import type {
   TranscriptEntry,
 } from "../../domain/assistant.js";
 import {
+  ASSISTANT_PROVIDER_CAPABILITY_KEYS,
   ASSISTANT_PROVIDERS,
   isAssistantProvider,
-  type AssistantProviderCapability,
   type AssistantProviderInfo,
 } from "../../domain/provider-catalog.js";
 import type { WorkspaceFileItem, WorkspaceFileListing, WorkspaceFileText } from "../../domain/workspace.js";
@@ -22,26 +22,6 @@ type JsonObject = Record<string, unknown>;
 type ResponseValidator<Method extends DaemonApiMethod> = (
   value: unknown,
 ) => value is DaemonApiResponseMap[Method];
-
-const CAPABILITY_KEYS: readonly AssistantProviderCapability[] = [
-  "models",
-  "requiresModelBeforePrompt",
-  "reasoningEffort",
-  "permissionProfileCreation",
-  "permissionProfileUpdates",
-  "turnSteering",
-  "approvals",
-  "createNamedSessions",
-  "renameSessions",
-  "forks",
-  "persistentSideChats",
-  "sessionModes",
-  "skills",
-  "slashCommands",
-  "images",
-  "workspaceFileRequests",
-  "terminalRequests",
-];
 
 function asObject(value: unknown): JsonObject | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -129,7 +109,7 @@ function isProviderInfo(value: unknown): value is AssistantProviderInfo {
   const canonical = ASSISTANT_PROVIDERS.find((provider) => provider.id === record.id);
   const capabilities = asObject(record.capabilities);
   return Boolean(canonical && isString(record.name) && record.name === canonical.name && capabilities &&
-    CAPABILITY_KEYS.every((key) => capabilities[key] === canonical.capabilities[key]));
+    ASSISTANT_PROVIDER_CAPABILITY_KEYS.every((key) => capabilities[key] === canonical.capabilities[key]));
 }
 
 function isFileItem(value: unknown): value is WorkspaceFileItem {

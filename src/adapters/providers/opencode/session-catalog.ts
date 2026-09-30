@@ -2,7 +2,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import type { ProviderCatalogPort, ProviderConnectionCatalog } from "../../../application/ports/provider-catalog.js";
 import type { ProviderSessionPort } from "../../../application/ports/provider-sessions.js";
-import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
+import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadOptions, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
 import type { AssistantThread } from "../../../domain/assistant.js";
 import { defaultOpenCodeModel } from "./model-mapper.js";
 import { mapOpenCodeSession, mapOpenCodeTranscript, openCodeModelFromMessages, openCodeModelFromSession } from "./conversation-mapper.js";
@@ -34,8 +34,10 @@ export class OpenCodeSessionCatalogAdapter implements ProviderCatalogPort, Provi
 
   async createThread(target: string, input: ProviderCreateThreadInput): Promise<ProviderCreateThreadResult> {
     const session = this.context.require(target);
-    const catalog = await session.connection.listModels(input.cwd);
-    const model = defaultOpenCodeModel(catalog.models);
+    const catalog = input.minimal
+      ? { models: session.connection.models }
+      : await session.connection.listModels(input.cwd);
+    const model = input.model?.trim() || defaultOpenCodeModel(catalog.models);
     if (!model) throw new Error(catalog.modelWarning ?? "OpenCode 모델을 찾지 못해 세션을 만들 수 없습니다. 먼저 사용 가능한 모델을 연결하세요.");
     const created = await session.connection.createSession(input.cwd, undefined, model);
     const threadId = created.id;
@@ -44,7 +46,9 @@ export class OpenCodeSessionCatalogAdapter implements ProviderCatalogPort, Provi
     session.cwdByThread.set(threadId, mapped.cwd || input.cwd);
     session.settingsByThread.set(threadId, { model });
     session.modelsByThread.set(threadId, catalog.models);
-    const skillCatalog = await this.context.loadSkills(session, threadId, mapped.cwd || input.cwd);
+    const skillCatalog = input.minimal
+      ? { skills: [], warnings: [] }
+      : await this.context.loadSkills(session, threadId, mapped.cwd || input.cwd);
     const thread: AssistantThread = { ...mapped, cwd: mapped.cwd || input.cwd, provider: "opencode" };
     return {
       thread,
@@ -59,18 +63,23 @@ export class OpenCodeSessionCatalogAdapter implements ProviderCatalogPort, Provi
       model,
       reasoningEffort: null,
       permissionProfile: null,
+      requiresFocusRestoreAfterDelete: false,
     };
   }
 
-  async openThread(target: string, threadId: string): Promise<ProviderOpenThreadResult> {
+  async openThread(target: string, threadId: string, options: ProviderOpenThreadOptions = { includeTranscript: true }): Promise<ProviderOpenThreadResult> {
     const session = this.context.require(target);
     const [thread, messages] = await Promise.all([
       session.connection.getSession(threadId),
-      session.connection.listMessages(threadId),
+      options.includeTranscript ? session.connection.listMessages(threadId) : Promise.resolve([]),
     ]);
     const mapped = mapOpenCodeSession(thread);
-    const catalog = await session.connection.listModels(mapped.cwd || undefined);
-    const skillCatalog = await this.context.loadSkills(session, threadId, mapped.cwd);
+    const catalog = options.minimal
+      ? { models: session.modelsByThread.get(threadId) ?? session.connection.models }
+      : await session.connection.listModels(mapped.cwd || undefined);
+    const skillCatalog = options.minimal
+      ? { skills: session.skillsByThread.get(threadId) ?? [], warnings: [] }
+      : await this.context.loadSkills(session, threadId, mapped.cwd);
     const model = session.settingsByThread.get(threadId)?.model ??
       openCodeModelFromSession(thread) ??
       openCodeModelFromMessages(messages) ??
@@ -78,13 +87,13 @@ export class OpenCodeSessionCatalogAdapter implements ProviderCatalogPort, Provi
     session.openedThreadIds.add(threadId);
     session.cwdByThread.set(threadId, mapped.cwd);
     session.settingsByThread.set(threadId, { model });
-    session.modelsByThread.set(threadId, catalog.models);
+    if (!options.minimal) session.modelsByThread.set(threadId, catalog.models);
     return {
       target,
       threadId,
       title: mapped.title,
       cwd: mapped.cwd,
-      entries: mapOpenCodeTranscript(messages),
+      entries: options.includeTranscript ? mapOpenCodeTranscript(messages) : [],
       skills: skillCatalog.skills.map(mapOpenCodeSkill),
       skillWarnings: skillCatalog.warnings,
       models: catalog.models,

@@ -11,14 +11,12 @@ export function useWindowControls({
   isLinuxDesktop,
   desktopSidebarCollapsed,
   onActivePage,
-  onOpenConnectionSettings,
   onNotice,
   onDetectedTheme,
 }: {
   isLinuxDesktop: boolean;
   desktopSidebarCollapsed: boolean;
-  onActivePage: (page: "sessions" | "skills") => void;
-  onOpenConnectionSettings: () => void;
+  onActivePage: (page: "sessions") => void;
   onNotice: (message: string) => void;
   onDetectedTheme: (theme: "dark" | "light") => void;
 }) {
@@ -67,9 +65,7 @@ export function useWindowControls({
     if (item === "menu") return <div className="window-menu-wrap" key={key} data-side={side}>
       <button className="window-control" type="button" aria-label="창 메뉴" title="창 메뉴" aria-expanded={gtkMenuOpen} onClick={() => setGtkMenuOpen((open) => !open)}><GtkWindowIcon source={gtkSettings?.icons.menu} fallback="menu" /></button>
       {gtkMenuOpen && <div className="window-menu-panel" role="menu">
-        <button type="button" role="menuitem" onClick={() => { onActivePage("sessions"); setGtkMenuOpen(false); }}>세션</button>
-        <button type="button" role="menuitem" onClick={() => { onActivePage("skills"); setGtkMenuOpen(false); }}>스킬</button>
-        <button type="button" role="menuitem" onClick={() => { onOpenConnectionSettings(); setGtkMenuOpen(false); }}>연결 설정</button>
+        <button type="button" role="menuitem" onClick={() => { onActivePage("sessions"); setGtkMenuOpen(false); }}>작업 공간</button>
       </div>}
     </div>;
     if (item === "minimize") {

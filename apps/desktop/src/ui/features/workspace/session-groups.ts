@@ -1,4 +1,5 @@
-import { threadUpdatedAt, timestampMillis } from "../conversation/session-state";
+import { threadUpdatedAt, timestampMillis } from "../../shared/provider-thread-state";
+import { basename } from "../../shared/path-name";
 import type { RemoteThread } from "../../../shared/bridge";
 
 export type Project = { key: string; name: string; path: string; sessions: RemoteThread[] };
@@ -15,11 +16,6 @@ export function groupThreads(threads: RemoteThread[]): Project[] {
   return [...groups.values()]
     .map((group) => ({ ...group, sessions: group.sessions.sort((a, b) => threadUpdatedAt(b) - threadUpdatedAt(a)) }))
     .sort((a, b) => threadUpdatedAt(b.sessions[0]) - threadUpdatedAt(a.sessions[0]));
-}
-
-export function basename(path: string): string {
-  const clean = path.replace(/\/+$/, "");
-  return clean.split("/").pop() || path || "Workspace";
 }
 
 export function formatAge(value: string | number | null): string {

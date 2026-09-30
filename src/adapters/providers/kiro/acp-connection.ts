@@ -52,20 +52,20 @@ export class KiroAcpConnection {
     this.rpc.respondError(id, code, message);
   }
 
-  async newSession(cwd: string, policyPresets: string[] = []): Promise<JsonObject> {
+  async newSession(cwd: string, policyPresets: string[] = [], mcpServers: JsonObject[] = []): Promise<JsonObject> {
     return asObject(await this.rpc.request("session/new", {
       cwd,
-      mcpServers: [],
+      mcpServers,
       ...(policyPresets.length ? { _meta: { kiro: { policyPreset: validateKiroPermissionPresets(policyPresets) } } } : {}),
     })) ?? {};
   }
 
-  async loadSession(sessionId: string, cwd: string, policyPresets: string[] = []): Promise<JsonObject> {
+  async loadSession(sessionId: string, cwd: string, policyPresets: string[] = [], mcpServers: JsonObject[] = []): Promise<JsonObject> {
     if (!isValidKiroSessionId(sessionId)) throw new Error("Session ID contains unsupported characters");
     return asObject(await this.rpc.request("session/load", {
       sessionId,
       cwd,
-      mcpServers: [],
+      mcpServers,
       ...(policyPresets.length ? { _meta: { kiro: { policyPreset: validateKiroPermissionPresets(policyPresets) } } } : {}),
     }, 120_000)) ?? {};
   }
@@ -87,9 +87,9 @@ export class KiroAcpConnection {
     return (Array.isArray(result?.options) ? result.options : []).map(asObject).filter((option): option is JsonObject => Boolean(option));
   }
 
-  startPrompt(sessionId: string, content: JsonObject[], onComplete: (error?: Error) => void): void {
+  startPrompt(sessionId: string, content: JsonObject[], onComplete: (result?: JsonObject, error?: Error) => void): void {
     void this.rpc.request("session/prompt", { sessionId, prompt: content }, 30 * 60_000)
-      .then(() => onComplete(), (error: unknown) => onComplete(asError(error)));
+      .then((result) => onComplete(asObject(result) ?? {}), (error: unknown) => onComplete(undefined, asError(error)));
   }
 
   cancel(sessionId: string): void {

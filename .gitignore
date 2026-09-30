@@ -2,6 +2,8 @@
 /dist
 /build
 .DS_Store
+.last-cli-state
+cli.log
 
 # Electrobun desktop and Capacitor Android apps
 node_modules/

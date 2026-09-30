@@ -1,12 +1,12 @@
-import { useMemo, type ReactNode, type Ref } from "react";
+import type { ReactNode, Ref } from "react";
 import { Icon } from "../../shared/Icon";
 import { providerDisplayName } from "../../shared/provider-display-name";
 import { formatAge, groupThreads, type Project } from "./session-groups";
-import type { AssistantProvider, RemoteSkill, RemoteThread } from "../../../shared/bridge";
-import type { BridgeConnectionState } from "../connection/connection-state";
-import type { AppPage, SettingsSection } from "./workspace-types";
+import type { AssistantProvider, RemoteThread } from "../../../shared/bridge";
+import type { BridgeConnectionState } from "../../shared/provider-ui-state";
+import type { AppPage } from "../../shared/workspace-state";
 
-export function WorkspaceSidebar({ asideRef, layout, provider, sessions, skills, settings, gtk, actions }: {
+export function WorkspaceSidebar({ asideRef, layout, provider, sessions, gtk, actions }: {
   asideRef: Ref<HTMLElement>;
   layout: {
     activePage: AppPage;
@@ -17,7 +17,6 @@ export function WorkspaceSidebar({ asideRef, layout, provider, sessions, skills,
     assistantProvider: AssistantProvider;
     assistantProviderName: string;
     threadProvider: AssistantProvider;
-    threadProviderName: string;
     daemonClient: boolean;
     connectionState: BridgeConnectionState;
   };
@@ -31,11 +30,6 @@ export function WorkspaceSidebar({ asideRef, layout, provider, sessions, skills,
     renamingSession: boolean;
     deletingSession: boolean;
   };
-  skills: {
-    items: RemoteSkill[];
-    selectedProvider: string;
-  };
-  settings: { section: SettingsSection };
   gtk: { leftControls?: ReactNode; rightControls?: ReactNode };
   actions: {
     openNewWorkspace: () => void;
@@ -47,33 +41,22 @@ export function WorkspaceSidebar({ asideRef, layout, provider, sessions, skills,
     toggleProject: (key: string) => void;
     navigate: (page: AppPage) => void;
     openSettings: () => void;
-    changeSettingsSection: (section: SettingsSection) => void;
-    changeSkillProvider: (provider: string) => void;
-    closeMobileSidebar: () => void;
   };
 }) {
-  const projects: Project[] = useMemo(() => groupThreads(sessions.threads), [sessions.threads]);
-  const providers = useMemo(() => ["전체 제공자", ...new Set(skills.items.map((skill) => skill.provider))], [skills.items]);
+  const projects: Project[] = groupThreads(sessions.threads);
   const { activePage } = layout;
-  const { assistantProviderName, threadProviderName, daemonClient, connectionState } = provider;
+  const { assistantProviderName, daemonClient, connectionState } = provider;
 
   return (
-    <aside ref={asideRef} id="workspace-sidebar" className={`sidebar ${activePage === "sessions" ? "sessions-sidebar" : activePage === "skills" ? "skills-sidebar" : "settings-sidebar"} ${layout.mobileSidebarOpen ? "mobile-open" : ""}`} aria-hidden={layout.sidebarA11yHidden} inert={layout.sidebarA11yHidden}>
+    <aside ref={asideRef} id="workspace-sidebar" className={`sidebar workspace-sidebar ${layout.mobileSidebarOpen ? "mobile-open" : ""}`} aria-hidden={layout.sidebarA11yHidden} inert={layout.sidebarA11yHidden}>
       <div className="brand-row electrobun-webkit-app-region-drag">
         {gtk.leftControls}
         <div className="brand-row-actions">
-          <button className="icon-button sidebar-action electrobun-webkit-app-region-no-drag" type="button" title="새 워크스페이스" aria-label="새 워크스페이스" onClick={actions.openNewWorkspace} disabled={connectionState !== "connected" || sessions.creatingSession || sessions.openingThread}><Icon name="plus" /></button>
+          <button className="icon-button sidebar-action electrobun-webkit-app-region-no-drag" type="button" title="새 작업 공간" aria-label="새 작업 공간" onClick={actions.openNewWorkspace} disabled={connectionState !== "connected" || sessions.creatingSession || sessions.openingThread}><Icon name="plus" /></button>
           {gtk.rightControls}
         </div>
       </div>
-      <nav className="app-nav" aria-label="주 메뉴">
-        <button className={activePage === "sessions" ? "app-nav-item active" : "app-nav-item"} onClick={() => actions.navigate("sessions")}><Icon name="message" /><span>세션</span></button>
-        <button className={activePage === "skills" ? "app-nav-item active" : "app-nav-item"} onClick={() => actions.navigate("skills")}><Icon name="sparkles" /><span>스킬</span><small>{skills.items.length}</small></button>
-        <button className={activePage === "settings" ? "app-nav-item active" : "app-nav-item"} onClick={actions.openSettings}><Icon name="settings" /><span>설정</span></button>
-      </nav>
-
-      {activePage === "sessions" && <>
-        <div className="sidebar-section-heading"><span>WORKSPACES</span><div className="sidebar-section-actions"><button className="icon-button" title="새 워크스페이스" aria-label="새 워크스페이스" onClick={actions.openNewWorkspace} disabled={connectionState !== "connected" || sessions.creatingSession}><Icon name="plus" /></button><button className="icon-button" title="세션 새로고침" onClick={actions.refresh} disabled={connectionState !== "connected"}><Icon name="refresh" /></button></div></div>
+        <div className="sidebar-section-heading"><span>작업 공간</span><div className="sidebar-section-actions"><button className="icon-button" title="새 작업 공간" aria-label="새 작업 공간" onClick={actions.openNewWorkspace} disabled={connectionState !== "connected" || sessions.creatingSession}><Icon name="plus" /></button><button className="icon-button" title="세션 새로고침" onClick={actions.refresh} disabled={connectionState !== "connected"}><Icon name="refresh" /></button></div></div>
         <div className="project-list">
           {projects.length ? projects.map((project) => {
             const collapsed = sessions.collapsedProjects.includes(project.key);
@@ -82,7 +65,7 @@ export function WorkspaceSidebar({ asideRef, layout, provider, sessions, skills,
                 <button className="project-heading-toggle" onClick={() => actions.toggleProject(project.key)} aria-label={`${project.name} 세션 ${collapsed ? "펼치기" : "접기"}`}>
                   <Icon name={collapsed ? "chevron-right" : "chevron-down"} /><Icon name="folder" /><b>{project.name}</b><span className="session-count">{project.sessions.length}</span>
                 </button>
-                <button className="project-new-session" title={`${project.name}에서 새 세션`} aria-label={`${project.name} 워크스페이스에서 새 세션`} onClick={() => actions.openNewSession(project.path)} disabled={!project.path || sessions.creatingSession || sessions.openingThread}><Icon name="plus" /></button>
+                <button className="project-new-session" title={`${project.name}에서 새 세션`} aria-label={`${project.name} 작업 공간에서 새 세션`} onClick={() => actions.openNewSession(project.path)} disabled={!project.path || sessions.creatingSession || sessions.openingThread}><Icon name="plus" /></button>
               </div>
               {!collapsed && <div className="session-list">{project.sessions.map((thread) => {
                 const isSelected = thread.provider === provider.threadProvider && thread.id === sessions.chatRootThreadId;
@@ -97,25 +80,18 @@ export function WorkspaceSidebar({ asideRef, layout, provider, sessions, skills,
                 </div>;
               })}</div>}
             </section>;
-          }) : <div className="sidebar-empty">{connectionState === "connected" ? <><p>세션 목록이 비어 있습니다.</p><button className="toolbar-button subtle" onClick={actions.openNewWorkspace} disabled={sessions.creatingSession}><Icon name="plus" /> 새 워크스페이스</button></> : daemonClient ? `데몬의 ${assistantProviderName}에 연결하면 세션이 표시됩니다.` : `${assistantProviderName} host를 연결하면 세션이 표시됩니다.`}</div>}
+          }) : <div className="sidebar-empty">{connectionState === "connected" ? <><p>세션 목록이 비어 있습니다.</p><button className="toolbar-button subtle" onClick={actions.openNewWorkspace} disabled={sessions.creatingSession}><Icon name="plus" /> 새 작업 공간</button></> : daemonClient ? `데몬의 ${assistantProviderName}에 연결하면 세션이 표시됩니다.` : `${assistantProviderName} host를 연결하면 세션이 표시됩니다.`}</div>}
         </div>
-      </>}
-      {activePage === "skills" && <div className="context-sidebar skills-context">
-        <div className="context-heading"><span>SKILL CATALOG</span><b>{skills.items.length.toString().padStart(2, "0")}</b></div>
-        <p>현재 {threadProviderName} 호스트와 세션에서 사용할 수 있는 도구입니다.</p>
-        <div className="provider-list" aria-label="제공자 필터">
-          {providers.map((name) => <button key={name} className={skills.selectedProvider === name ? "provider-filter active" : "provider-filter"} onClick={() => actions.changeSkillProvider(name)}><span>{name === "전체 제공자" ? <Icon name="sparkles" /> : <span className="provider-glyph">{name.slice(0, 1).toUpperCase()}</span>}{name}</span><small>{name === "전체 제공자" ? skills.items.length : skills.items.filter((skill) => skill.provider === name).length}</small></button>)}
-        </div>
-        <div className="context-sidebar-note"><span className={connectionState === "connected" ? "status-green" : "status-green preview-led"} />{connectionState === "connected" ? "원격 카탈로그 동기화됨" : "호스트 연결 필요"}</div>
-      </div>}
-      {activePage === "settings" && <div className="context-sidebar settings-context">
-        <div className="context-heading"><span>APP SETTINGS</span></div>
-        <p>연결 정보와 화면 테마를 관리합니다.</p>
-        <nav className="settings-section-nav" aria-label="설정 페이지">
-          <button type="button" className={settings.section === "connection" ? "settings-section-item active" : "settings-section-item"} onClick={() => { actions.changeSettingsSection("connection"); actions.closeMobileSidebar(); }}><Icon name="branch" /><span>연결</span>{connectionState === "connected" && <small>연결됨</small>}</button>
-          <button type="button" className={settings.section === "theme" ? "settings-section-item active" : "settings-section-item"} onClick={() => { actions.changeSettingsSection("theme"); actions.closeMobileSidebar(); }}><Icon name="sun" /><span>테마</span></button>
-        </nav>
-      </div>}
+      <div className="sidebar-settings-footer">
+        <button
+          className={`icon-button sidebar-settings-entry${activePage === "settings" ? " active" : ""}`}
+          type="button"
+          title={activePage === "settings" ? "작업 공간" : "설정"}
+          aria-label={activePage === "settings" ? "작업 공간으로 돌아가기" : "설정 열기"}
+          aria-current={activePage === "settings" ? "page" : undefined}
+          onClick={activePage === "settings" ? () => actions.navigate("sessions") : actions.openSettings}
+        ><Icon name="settings" /></button>
+      </div>
     </aside>
   );
 }

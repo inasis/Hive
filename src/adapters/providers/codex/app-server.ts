@@ -165,8 +165,8 @@ export class CodexAppServerApi {
     return this.call("thread/delete", { threadId }, timeoutMs);
   }
 
-  startThread(cwd: string): Promise<unknown> {
-    return this.call("thread/start", { cwd });
+  startThread(cwd: string, options: { ephemeral?: boolean } = {}): Promise<unknown> {
+    return this.call("thread/start", { cwd, ...(options.ephemeral ? { ephemeral: true } : {}) });
   }
 
   resumeThread(threadId: string, options: { excludeTurns: boolean }): Promise<unknown> {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { WorkspaceFileOpenRequest, WorkspaceFileTab, WorkspaceTab } from "./workspace-types";
+import type { WorkspaceFileOpenRequest, WorkspaceFileTab, WorkspaceTab } from "../../shared/workspace-state";
 import type { WorkspaceFileText } from "../../../shared/bridge";
 
 export function useWorkspaceTabs({
@@ -92,6 +92,11 @@ export function useWorkspaceTabs({
     setTabCreateMenuOpen(false);
   };
 
+  const closeTerminalTab = () => {
+    setTerminalContext(null);
+    if (activeTab === "terminal") setActiveTab("chat");
+  };
+
   const toggleProject = (key: string) => setCollapsedProjects((current) =>
     current.includes(key) ? current.filter((project) => project !== key) : [...current, key],
   );
@@ -136,6 +141,7 @@ export function useWorkspaceTabs({
     openWorkspaceFileTab,
     handleWorkspaceFileOpenHandled,
     openTerminalTab,
+    closeTerminalTab,
     toggleProject,
     toggleFilePanel,
     closeWorkspaceFileTab,

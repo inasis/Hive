@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./ui/App";
-import { disconnectDaemonBridge, isDaemonClient, isMobileApp, setDesktopDaemonMode } from "./ui/bridgeClient";
+import { bridgeRpc, disconnectDaemonBridge, isDaemonClient, isMobileApp, isWindowsDesktop as browserReportsWindows, setDesktopDaemonMode } from "./ui/bridgeClient";
 import { DaemonPairingGate } from "./ui/DaemonPairingGate";
 import "@xterm/xterm/css/xterm.css";
 import "./ui/styles.css";
@@ -9,8 +9,21 @@ import "./ui/styles.css";
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element not found");
 
+const embeddedHostPlatform = new URLSearchParams(window.location.search).get("hostPlatform");
+
 function HiveRoot() {
   const [daemonMode, setDaemonMode] = useState(isDaemonClient);
+  const [windowsDesktop, setWindowsDesktop] = useState(browserReportsWindows || embeddedHostPlatform === "win32");
+
+  useEffect(() => {
+    if (isMobileApp) return;
+    let mounted = true;
+    void bridgeRpc.request.getHostPlatform({})
+      .then(({ platform }) => { if (mounted) setWindowsDesktop(platform === "win32"); })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
   const useDaemon = () => {
     setDesktopDaemonMode(true);
     setDaemonMode(true);
@@ -22,12 +35,12 @@ function HiveRoot() {
   };
 
   if (isMobileApp) {
-    return <DaemonPairingGate>{(changePairing) => <App onChangeDaemonSettings={changePairing} />}</DaemonPairingGate>;
+    return <DaemonPairingGate isWindowsDesktop={windowsDesktop}>{(changePairing) => <App isWindowsDesktop={windowsDesktop} onChangeDaemonSettings={changePairing} />}</DaemonPairingGate>;
   }
   if (daemonMode) {
-    return <DaemonPairingGate onUseDirectConnection={useDirect}>{(changePairing) => <App onChangeDaemonSettings={changePairing} onUseDirectConnection={useDirect} />}</DaemonPairingGate>;
+    return <DaemonPairingGate isWindowsDesktop={windowsDesktop} onUseDirectConnection={useDirect}>{(changePairing) => <App isWindowsDesktop={windowsDesktop} onChangeDaemonSettings={changePairing} onUseDirectConnection={useDirect} />}</DaemonPairingGate>;
   }
-  return <App onUseDaemonConnection={useDaemon} />;
+  return <App isWindowsDesktop={windowsDesktop} onUseDaemonConnection={useDaemon} />;
 }
 
 createRoot(root).render(

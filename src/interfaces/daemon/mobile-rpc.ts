@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import type { MobileDaemonPeer } from "../../application/ports/mobile-daemon-peer.js";
 import { isDaemonApiMethod } from "../contracts/daemon-api.js";
 import { parseDaemonClientPacket } from "../contracts/daemon-transport.js";
@@ -13,6 +12,7 @@ export function handleMobileDaemonPeer(
   token: string,
   dispatch: DaemonRequestDispatcher,
   onAuthenticated: () => void,
+  verifyToken: (candidate: string, expected: string) => boolean,
 ): void {
   let authenticated = false;
   let activeRequests = 0;
@@ -25,7 +25,7 @@ export function handleMobileDaemonPeer(
       try { message = parseObject(text); }
       catch { peer.close(1008, "Invalid authentication message"); return; }
       const packet = parseDaemonClientPacket(message);
-      if (packet?.type !== "authenticate" || !secureCompare(packet.token, token)) {
+      if (packet?.type !== "authenticate" || !verifyToken(packet.token, token)) {
         peer.close(1008, "Authentication failed");
         return;
       }
@@ -40,8 +40,14 @@ export function handleMobileDaemonPeer(
     try { message = parseObject(text); }
     catch { peer.send({ type: "error", error: "Invalid request message" }); return; }
     const packet = parseDaemonClientPacket(message);
-    if (packet?.type !== "request" || !isDaemonApiMethod(packet.method)) {
+    if (packet?.type !== "request") {
       peer.send({ type: "error", error: "Unsupported mobile daemon request" });
+      return;
+    }
+    if (!isDaemonApiMethod(packet.method)) {
+      // Keep the request correlated so the client can show the actual unsupported method
+      // instead of waiting for its RPC timeout.
+      peer.send({ type: "response", id: packet.id, error: `Unsupported daemon request: ${packet.method}` });
       return;
     }
     if (activeRequests >= MAX_ACTIVE_REQUESTS) {
@@ -58,13 +64,6 @@ export function handleMobileDaemonPeer(
       activeRequests -= 1;
     }
   });
-}
-
-function secureCompare(candidate: unknown, expected: string): boolean {
-  if (typeof candidate !== "string") return false;
-  const actualBytes = Buffer.from(candidate, "utf8");
-  const expectedBytes = Buffer.from(expected, "utf8");
-  return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
 }
 
 function parseObject(text: string): Record<string, unknown> {

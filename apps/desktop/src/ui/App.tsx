@@ -3,21 +3,20 @@ import { useActiveConversationState } from "./features/conversation/useActiveCon
 import { useImageAttachments } from "./features/conversation/useImageAttachments";
 import { useConversationRuntime } from "./features/conversation/useConversationRuntime";
 import { useThreadViewStore } from "./features/conversation/useThreadViewStore";
-import { useTranscriptDeltaBuffer } from "./features/conversation/useTranscriptDeltaBuffer";
-import { useThreadEntryUpdates } from "./features/conversation/useThreadEntryUpdates";
+import { useConversationEventPipeline } from "./features/conversation/useConversationEventPipeline";
 import { useThreadViewLifecycle } from "./features/conversation/useThreadViewLifecycle";
 import { AppDialogHost } from "./features/sessions/AppDialogHost";
-import { getConnectionPresentation } from "./features/settings/connection-presentation";
+import { getConnectionPresentation } from "./features/connection/connection-presentation";
 import { useThemeSettings } from "./features/settings/useThemeSettings";
 import { useWorkspaceTabs } from "./features/workspace/useWorkspaceTabs";
+import { useWorkspaceNavigation } from "./features/workspace/useWorkspaceNavigation";
 import { useResponsiveWorkspaceLayout } from "./features/workspace/useResponsiveWorkspaceLayout";
 import { deriveWorkspaceViewModel } from "./features/workspace/workspace-view-model";
-import type { AppPage, SettingsSection } from "./features/workspace/workspace-types";
-import { WorkspacePageContent } from "./features/workspace/WorkspacePageContent";
+import { WorkspacePageContent } from "./WorkspacePageContent";
 import { WorkspaceFrame } from "./features/workspace/WorkspaceFrame";
+import { TerminalPanel } from "./features/workspace/TerminalPanel";
 import { useWindowControls } from "./features/window/useWindowControls";
 import { useWindowResize } from "./features/window/useWindowResize";
-import { useBridgeEvents } from "./features/conversation/useBridgeEvents";
 import type { ApprovalUiRequest } from "./shared/bridge-event-adapter";
 import { useApprovalResponse } from "./features/conversation/useApprovalResponse";
 import { useComposerSubmission } from "./features/conversation/useComposerSubmission";
@@ -25,7 +24,7 @@ import { useConversationTurnControls } from "./features/conversation/useConversa
 import { useSlashSkills } from "./features/skills/useSlashSkills";
 import { useSkillsBrowser } from "./features/skills/useSkillsBrowser";
 import { useConnectionWorkflow } from "./features/connection/useConnectionWorkflow";
-import { formatWorkspaceTargetLabel } from "./features/connection/workspace-target-label";
+import { formatWorkspaceTargetLabel } from "./shared/workspace-target-label";
 import { useConnectionState } from "./features/connection/useConnectionState";
 import { useAdditionalProviderThreads } from "./features/connection/useAdditionalProviderThreads";
 import { useTransportLifecycleEvents } from "./features/connection/useTransportLifecycleEvents";
@@ -37,10 +36,11 @@ import { useResponseFork } from "./features/sessions/useResponseFork";
 import { useSideChatCreation } from "./features/sessions/useSideChatCreation";
 import { useSessionForkState } from "./features/sessions/useSessionForkState";
 import { useSessionSettings } from "./features/sessions/useSessionSettings";
-import { isDaemonClient, isLinuxDesktop, isMobileApp, isWindowsDesktop, setAssistantProvider as persistAssistantProvider } from "./bridgeClient";
+import { isDaemonClient, isLinuxDesktop, isMobileApp, setAssistantProvider as persistAssistantProvider } from "./bridgeClient";
 import { LOCAL_WORKSPACE_TARGET } from "../shared/bridge";
 
-export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemonConnection }: {
+export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDirectConnection, onUseDaemonConnection }: {
+  isWindowsDesktop?: boolean;
   onChangeDaemonSettings?: () => void;
   onUseDirectConnection?: () => void;
   onUseDaemonConnection?: () => void;
@@ -66,8 +66,6 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
     setThreads,
     setProviderCatalogs,
   } = connectionUi.setters;
-  const [activePage, setActivePage] = useState<AppPage>(() => isDaemonClient || Boolean(connectionUi.state.target) ? "sessions" : "settings");
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>("connection");
   const conversationUi = useActiveConversationState();
   const {
     activeThreadId,
@@ -119,16 +117,24 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
   const { activeSideChatId, sideChats } = sessionForkUi.state;
   const { setActiveSideChatId, setSideChats } = sessionForkUi.setters;
   const [notice, setNotice] = useState("");
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
   const isWideLayout = useResponsiveWorkspaceLayout(isMobileApp);
   const [approval, setApproval] = useState<ApprovalUiRequest | null>(null);
-
-  const openSettings = (section: SettingsSection = settingsSection) => {
-    setSettingsSection(section);
-    setActivePage("settings");
-    setMobileSidebarOpen(false);
-  };
+  const workspaceNavigation = useWorkspaceNavigation({
+    initialPage: isDaemonClient || Boolean(connectionUi.state.target) ? "sessions" : "settings",
+  });
+  const {
+    activePage,
+    setActivePage,
+    settingsSection,
+    setSettingsSection,
+    mobileSidebarOpen,
+    setMobileSidebarOpen,
+    desktopSidebarCollapsed,
+    setDesktopSidebarCollapsed,
+    closeMobileSidebar,
+    openSettings,
+    navigate,
+  } = workspaceNavigation;
 
   const threadViews = useThreadViewStore();
   const conversationRuntime = useConversationRuntime(assistantProvider);
@@ -197,6 +203,7 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
     openWorkspaceFileTab,
     handleWorkspaceFileOpenHandled,
     openTerminalTab,
+    closeTerminalTab,
     toggleProject,
     toggleFilePanel,
     closeWorkspaceFileTab,
@@ -205,7 +212,7 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
     cwd: activeCwd,
     isMobileApp,
     isWideLayout,
-    closeMobileSidebar: () => setMobileSidebarOpen(false),
+    closeMobileSidebar,
   });
 
   const {
@@ -223,15 +230,10 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
     isLinuxDesktop,
     desktopSidebarCollapsed,
     onActivePage: (page) => setActivePage(page),
-    onOpenConnectionSettings: () => openSettings("connection"),
     onNotice: setNotice,
     onDetectedTheme: setTheme,
   });
   const { beginWindowResize, moveWindowResize, endWindowResize } = useWindowResize(setNotice);
-
-  const updateThreadEntries = useThreadEntryUpdates({ store: threadViews.current, runtime: conversationRuntime, setActiveEntries: setEntries });
-
-  const { enqueue: enqueueAssistantDelta, flush: flushAssistantDeltas, clearThread: clearThreadDeltas, clear: clearAssistantDeltas } = useTranscriptDeltaBuffer(updateThreadEntries);
 
   const loadAdditionalProviderThreads = useAdditionalProviderThreads({ setThreads, setProviderCatalogs });
 
@@ -245,39 +247,38 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
     setActivePage,
     setConnectedProvider,
   }), []);
-  useTransportLifecycleEvents({ provider: assistantProvider, setters: transportEventSetters, loadAdditionalProviderThreads });
 
   const { filter, setFilter, provider: skillProvider, setProvider: setSkillProvider, visibleSkills } = useSkillsBrowser(skills);
-  const bridgeEventContext = useMemo(() => ({ connectedTarget }), [connectedTarget]);
-  const bridgeEventSetters = useMemo(() => ({
-    setNotice,
-    setThreads,
-    setProviderCatalogs,
-    setApproval,
-    setActiveTitle,
-    setSideChats,
-    setCurrentModel,
-    setCurrentEffort,
-    setCurrentPermissionProfile,
-    setCurrentModeId,
-    setSlashCommands,
-    setBusy,
-    setBusySince,
-    setActiveTurnId,
-    setStoppingTurn,
-    setSteeringPrompt,
-  }), []);
-  const bridgeEventRefs = useMemo(() => ({
+  const conversationEventPipeline = useConversationEventPipeline({
+    connectedTarget,
     threadViews,
     runtime: conversationRuntime,
-  }), []);
-  const bridgeEventActions = useMemo(() => ({
+    setActiveEntries: setEntries,
+    setters: {
+      setNotice,
+      setThreads,
+      setProviderCatalogs,
+      setApproval,
+      setActiveTitle,
+      setSideChats,
+      setCurrentModel,
+      setCurrentEffort,
+      setCurrentPermissionProfile,
+      setCurrentModeId,
+      setSlashCommands,
+      setBusy,
+      setBusySince,
+      setActiveTurnId,
+      setStoppingTurn,
+      setSteeringPrompt,
+    },
+  });
+  const {
     updateThreadEntries,
     flushAssistantDeltas,
-    enqueueAssistantDelta,
     clearThreadDeltas,
-  }), [updateThreadEntries, flushAssistantDeltas, enqueueAssistantDelta, clearThreadDeltas]);
-  useBridgeEvents({ context: bridgeEventContext, setters: bridgeEventSetters, refs: bridgeEventRefs, actions: bridgeEventActions });
+    clearAssistantDeltas,
+  } = conversationEventPipeline;
 
   const {
     slashMenuOpen,
@@ -497,6 +498,25 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
     },
   });
 
+  useTransportLifecycleEvents({
+    provider: assistantProvider,
+    activeThread: {
+      target: connectedTarget,
+      sideChatId: activeSideChatId,
+      thread: activeThreadId ? {
+        id: activeThreadId,
+        provider: activeThreadProvider ?? threadProvider,
+        title: activeTitle,
+        cwd: activeCwd,
+        preview: "",
+        updatedAt: null,
+      } : null,
+    },
+    setters: transportEventSetters,
+    loadAdditionalProviderThreads,
+    restoreThread: (thread, sideChatId) => openThread(LOCAL_WORKSPACE_TARGET, thread, sideChatId),
+  });
+
   const { forkingEntryId, forkCompletedResponse } = useResponseFork({
     state: {
       connectedTarget,
@@ -563,11 +583,6 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
       openThread,
     },
   });
-
-  const closeTerminalTab = () => {
-    setTerminalContext(null);
-    if (activeTab === "terminal") setActiveTab("chat");
-  };
 
   const { steerPrompt, stopTurn } = useConversationTurnControls({
     state: {
@@ -636,7 +651,7 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
       updateThreadEntries,
     },
     hiveCommands: {
-      setters: { setFilter, setActivePage },
+      setters: { setFilter, setActivePage, setSettingsSection },
       actions: { disconnect: () => disconnect(), createSideChat },
     },
   });
@@ -751,13 +766,6 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
       },
       deleteActions: { close: () => setDeleteDialog(null), confirm: () => void deleteSession() },
     }}
-    windowResize={{
-      maximized: windowMaximized,
-      overlayOpen: newSessionDialog.open || Boolean(renameDialog) || Boolean(deleteDialog) || Boolean(approval),
-      begin: beginWindowResize,
-      move: moveWindowResize,
-      end: endWindowResize,
-    }}
   />;
 
   return (
@@ -770,30 +778,32 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
       }}
       sidebar={{
         layout: { activePage, mobileSidebarOpen },
-        provider: { assistantProvider, assistantProviderName, threadProvider, threadProviderName, daemonClient: isDaemonClient, connectionState },
+        provider: { assistantProvider, assistantProviderName, threadProvider, daemonClient: isDaemonClient, connectionState },
         sessions: { threads, connectedTarget, chatRootThreadId, collapsedProjects, creatingSession, openingThread, renamingSession, deletingSession },
-        skills: { items: skills, selectedProvider: skillProvider },
-        settings: { section: settingsSection },
         gtk: {
           leftControls: sidebarGtkLeftDecorations.length > 0 ? <div className="window-controls window-controls-left sidebar-window-controls electrobun-webkit-app-region-no-drag" style={gtkControlStyle} aria-label="왼쪽 창 제어">{renderGtkDecorations(sidebarGtkLeftDecorations, "left")}</div> : undefined,
           rightControls: sidebarGtkRightDecorations.length > 0 ? <div className="window-controls window-controls-right sidebar-window-controls electrobun-webkit-app-region-no-drag" style={gtkControlStyle} aria-label="오른쪽 창 제어">{renderGtkDecorations(sidebarGtkRightDecorations, "right")}</div> : undefined,
         },
         actions: {
-          openNewWorkspace: () => openNewSessionDialog("workspace"),
-          openNewSession: (path) => openNewSessionDialog("session", path),
+          openNewWorkspace: () => { navigate("sessions"); openNewSessionDialog("workspace"); },
+          openNewSession: (path) => { navigate("sessions"); openNewSessionDialog("session", path); },
           refresh: () => { void refresh(); },
-          openThread: (requestedTarget, thread) => { void openThread(requestedTarget, thread); },
+          openThread: (requestedTarget, thread) => { navigate("sessions"); void openThread(requestedTarget, thread); },
           openRenameSession: openRenameSessionDialog,
           openDeleteSession: openDeleteSessionDialog,
           toggleProject,
-          navigate: (page) => { setActivePage(page); setMobileSidebarOpen(false); },
+          navigate,
           openSettings: () => openSettings(),
-          changeSettingsSection: setSettingsSection,
-          changeSkillProvider: setSkillProvider,
-          closeMobileSidebar: () => setMobileSidebarOpen(false),
         },
       }}
       windowChrome={{ gtkSettings, gtkTopbarStyle, gtkControlStyle, topbarGtkLeftDecorations, topbarGtkRightDecorations, renderGtkDecorations, renderWindowsControls }}
+      windowResize={{
+        maximized: windowMaximized,
+        overlayOpen: newSessionDialog.open || Boolean(renameDialog) || Boolean(deleteDialog) || Boolean(approval),
+        begin: beginWindowResize,
+        move: moveWindowResize,
+        end: endWindowResize,
+      }}
       filesPanel={{
         ref: filesPanelRef,
         panel: { target: connectedTarget, cwd: activeCwd, openFileRequest: workspaceFileOpenRequest, onOpenFileRequestHandled: handleWorkspaceFileOpenHandled, onOpenFile: openWorkspaceFileTab },
@@ -804,6 +814,7 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
         <WorkspacePageContent
           page={activePage}
           settingsSection={settingsSection}
+          onChangeSettingsSection={setSettingsSection}
           conversation={{
             thread: {
               id: activeThreadId,
@@ -871,6 +882,7 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
               onOpenModelSettings: () => setModelSettingsDialogOpen(true),
             },
             emptyState: { connectionState, providerName: assistantProviderName, creatingSession, notice },
+            terminalPanel: terminalContext ? <TerminalPanel target={terminalContext.target} cwd={terminalContext.cwd} /> : null,
             actions: {
               setActiveTab,
               switchChatTab,
@@ -893,6 +905,8 @@ export function App({ onChangeDaemonSettings, onUseDirectConnection, onUseDaemon
             warnings: skillWarnings,
             connectionState,
             activeThreadId,
+            selectedProvider: skillProvider,
+            onProviderChange: setSkillProvider,
             filter,
             onFilterChange: setFilter,
             onOpenConnectionSettings: () => openSettings("connection"),

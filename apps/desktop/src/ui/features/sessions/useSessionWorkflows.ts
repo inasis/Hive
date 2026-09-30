@@ -1,8 +1,8 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { AssistantProvider, RemoteThread } from "../../../shared/bridge";
 import type { ApprovalUiRequest } from "../../shared/bridge-event-adapter";
-import type { ThreadView } from "../conversation/session-state";
-import type { ProviderCatalogs } from "../connection/provider-catalog-state";
+import type { ThreadView } from "../../shared/conversation-view";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
 import { useSessionCreation } from "./useSessionCreation";
 import { useThreadOpening } from "./useThreadOpening";
 

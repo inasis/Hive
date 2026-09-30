@@ -1,6 +1,7 @@
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
 import { isAssistantProvider } from "../../domain/provider-catalog.js";
-import type { AssistantCommand } from "../../domain/assistant.js";
+import type { AssistantCommand, ReasoningEffort } from "../../domain/assistant.js";
+import type { A2ACommunicationSummaryItem } from "../../domain/a2a.js";
 
 /** Existing daemon and desktop bridge event wire shape. */
 export type BridgeEvent = {
@@ -21,15 +22,31 @@ type SerializedToolActivity =
   | { id?: string; type: "fileChange"; changes: Array<{ path: string }>; status?: string }
   | { id?: string; type: "webSearch"; action: { queries: string[] }; result?: string; status?: string };
 
+export type SerializedThreadSettings = {
+  model?: string;
+  effort?: string;
+  activePermissionProfile?: { id: string };
+  currentModeId?: string;
+  supportedReasoningEfforts?: ReasoningEffort[];
+};
+
+const APPROVAL_REQUEST_METHODS: ReadonlySet<string> = new Set([
+  "item/commandExecution/requestApproval",
+  "item/fileChange/requestApproval",
+  "session/request_permission",
+]);
+
 /** Typed output variants produced by the application and terminal event serializers. */
 export type SerializedBridgeEvent =
+  | BridgeEventFor<"thread/created", { threadId: string; name: string; cwd: string; preview: string; updatedAt: string | number | null }>
   | BridgeEventFor<"thread/name/updated", { threadId: string; name: string }>
   | BridgeEventFor<"thread/deleted" | "thread/transcript/cleared", { threadId: string }>
   | BridgeEventFor<"turn/started", { threadId: string; turn: { id?: string } }>
   | BridgeEventFor<"turn/completed", { threadId: string; turn: { id?: string; status?: string; error?: { message: string } } }>
   | BridgeEventFor<"item/agentMessage/delta", { threadId: string; turnId: string; itemId: string; delta: string }>
+  | BridgeEventFor<"hive/a2a/communication-summary", { threadId: string; summaryId: string; communications: A2ACommunicationSummaryItem[]; responseTurnId?: string }>
   | BridgeEventFor<"item/completed", { threadId: string; turnId: string; item: { id: string; type: "agentMessage"; text: string } | SerializedToolActivity }>
-  | BridgeEventFor<"thread/settings/updated", { threadId: string; threadSettings: Record<string, unknown> }>
+  | BridgeEventFor<"thread/settings/updated", { threadId: string; threadSettings: SerializedThreadSettings }>
   | BridgeEventFor<"thread/commands/updated", { threadId: string; commands: AssistantCommand[] }>
   | BridgeEventFor<"item/started", { threadId: string; turnId?: string; item: SerializedToolActivity }>
   | BridgeEventFor<"item/completed", { threadId: string; turnId?: string; item: SerializedToolActivity }>
@@ -50,6 +67,7 @@ export function parseBridgeEvent(value: unknown): BridgeEvent | undefined {
   const params = event.params === undefined ? {} : asRecord(event.params);
   if (!params) return undefined;
   if (event.provider !== undefined && !isAssistantProvider(event.provider)) return undefined;
+  if ((event.requestId !== undefined) !== APPROVAL_REQUEST_METHODS.has(event.method)) return undefined;
   if (event.requestId !== undefined && !((typeof event.requestId === "string" && event.requestId.length > 0) ||
       (typeof event.requestId === "number" && Number.isFinite(event.requestId)))) return undefined;
   return {

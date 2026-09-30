@@ -1,9 +1,10 @@
 import { createServer as createHttpsServer } from "node:https";
-import { dispatchDaemonRequest, stopOpenCodeProvider, subscribeDaemonEvents, warmOpenCodeProvider } from "./daemon.js";
-import type { BridgeEvent } from "../interfaces/contracts/daemon-events.js";
+import { dispatchDaemonRequest, startConfiguredA2AHttpServer, stopA2AHttpServer, stopOpenCodeProvider, subscribeDaemonEvents, warmOpenCodeProvider } from "./daemon.js";
+import type { SerializedBridgeEvent } from "../interfaces/contracts/daemon-events.js";
 import { handleMobileDaemonPeer } from "../interfaces/daemon/mobile-rpc.js";
 import { attachMobileWebSocketTransport, type MobileWebSocketPeer } from "../adapters/transport/mobile-websocket.js";
 import { getMobileToken, getPublicEndpoints, getTlsMaterial, listPrivateIpv4Addresses } from "../adapters/transport/mobile-security.js";
+import { verifyMobileToken } from "../adapters/transport/mobile-token-verifier.js";
 
 const mobilePeers = new Set<MobileWebSocketPeer>();
 
@@ -23,7 +24,7 @@ export async function runHiveMobileDaemon(): Promise<void> {
   const closePeers = attachMobileWebSocketTransport(server, {
     isOriginAllowed: isAllowedOrigin,
     onPeer: (peer) => {
-      handleMobileDaemonPeer(peer, token, dispatchDaemonRequest, () => mobilePeers.add(peer));
+      handleMobileDaemonPeer(peer, token, dispatchDaemonRequest, () => mobilePeers.add(peer), verifyMobileToken);
       peer.onClose(() => mobilePeers.delete(peer));
     },
   });
@@ -44,23 +45,31 @@ export async function runHiveMobileDaemon(): Promise<void> {
   });
 
   subscribeDaemonEvents((event) => broadcastMobileEvent(event));
-  const shutdown = (): void => {
+  try {
+    await startConfiguredA2AHttpServer();
+  } catch (error) {
     closePeers();
     server.close();
-    void stopOpenCodeProvider();
-  };
-  process.once("SIGINT", shutdown);
-  process.once("SIGTERM", shutdown);
-
+    await stopOpenCodeProvider();
+    throw error;
+  }
   try {
     await warmOpenCodeProvider();
     process.stdout.write("OpenCode provider connected.\n");
   } catch (error) {
     process.stderr.write(`OpenCode startup failed: ${errorMessage(error)}\n`);
   }
+  const shutdown = (): void => {
+    closePeers();
+    server.close();
+    void stopA2AHttpServer();
+    void stopOpenCodeProvider();
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
 }
 
-function broadcastMobileEvent(event: BridgeEvent): void {
+function broadcastMobileEvent(event: SerializedBridgeEvent): void {
   for (const peer of mobilePeers) peer.send({ type: "event", event });
 }
 

@@ -1,12 +1,27 @@
-import {
-  parseDaemonApiRequest,
-  type DaemonApiMethod,
-  type DaemonApiRequestMap,
-  type DaemonApiResponseMap,
-} from "../contracts/daemon-api.js";
+import { DEFAULT_ASSISTANT_PROVIDER, type AssistantProvider } from "../../domain/provider-catalog.js";
+import { isProviderDaemonApiMethod, type DaemonApiMethod, type DaemonApiRequestMap, type DaemonApiResponseMap, type ProviderDaemonApiMethod } from "../contracts/daemon-api.js";
+import { parseDaemonApiRequest } from "../contracts/daemon-request.js";
+
+type ResolveProviderParams<Params> = Params extends unknown
+  ? Params extends { provider?: AssistantProvider }
+    ? Params extends { provider: infer Provider extends AssistantProvider }
+      ? Omit<Params, "provider"> & { provider: Provider }
+      : Omit<Params, "provider"> & { provider: Exclude<Params["provider"], undefined> extends AssistantProvider
+          ? Exclude<Params["provider"], undefined>
+          : never }
+    : Params
+  : never;
+
+type ResolvedRequestParams<Method extends DaemonApiMethod> = Method extends ProviderDaemonApiMethod
+  ? ResolveProviderParams<DaemonApiRequestMap[Method]>
+  : DaemonApiRequestMap[Method];
+
+export type ResolvedDaemonApiRequestMap = {
+  [Method in DaemonApiMethod]: ResolvedRequestParams<Method>;
+};
 
 export type DaemonRequestHandlerMap = {
-  [Method in DaemonApiMethod]: (params: DaemonApiRequestMap[Method]) => Promise<DaemonApiResponseMap[Method]>;
+  [Method in DaemonApiMethod]: (params: ResolvedDaemonApiRequestMap[Method]) => Promise<DaemonApiResponseMap[Method]>;
 };
 
 export interface DaemonRequestDispatcher {
@@ -22,7 +37,7 @@ export function createDaemonRequestDispatcher(handlers: DaemonRequestHandlerMap)
   ): Promise<DaemonApiResponseMap[Method]>;
   function dispatch(method: string, params: unknown): Promise<unknown>;
   async function dispatch(method: string, params: unknown): Promise<unknown> {
-    const request = parseDaemonApiRequest(method, params);
+    const request = resolveProvider(parseDaemonApiRequest(method, params));
     switch (request.method) {
       case "listProviders": return handlers.listProviders(request.params);
       case "connect": return handlers.connect(request.params);
@@ -52,6 +67,23 @@ export function createDaemonRequestDispatcher(handlers: DaemonRequestHandlerMap)
     }
   }
   return dispatch;
+}
+
+type ResolvedDaemonApiRequest = {
+  [Method in DaemonApiMethod]: { method: Method; params: ResolvedDaemonApiRequestMap[Method] };
+}[DaemonApiMethod];
+
+/** Apply the backward-compatible default provider once, before any method handler runs. */
+function resolveProvider(request: ReturnType<typeof parseDaemonApiRequest>): ResolvedDaemonApiRequest {
+  if (!isProviderDaemonApiMethod(request.method)) return request as ResolvedDaemonApiRequest;
+  const providerRequest = request as Extract<typeof request, { method: ProviderDaemonApiMethod }>;
+  return {
+    ...providerRequest,
+    params: {
+      ...providerRequest.params,
+      provider: providerRequest.params.provider ?? DEFAULT_ASSISTANT_PROVIDER,
+    },
+  } as ResolvedDaemonApiRequest;
 }
 
 function assertNever(value: never): never {

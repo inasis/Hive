@@ -1,7 +1,7 @@
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
 import type { ProviderCommandCatalog, ProviderCommandResult, ProviderCommandsPorts } from "../ports/provider-commands.js";
-import { requireProviderCapability } from "./provider-capability.js";
-import { validateThreadId } from "./provider-sessions.js";
+import { requireProviderCapability } from "../policies/provider-capability.js";
+import { validateThreadId } from "../validation/thread-id.js";
 
 /** Validate shared command discovery input and dispatch to the provider adapter. */
 export class ProviderCommandUseCases {

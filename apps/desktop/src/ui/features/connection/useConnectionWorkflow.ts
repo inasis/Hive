@@ -2,13 +2,13 @@ import { useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { ASSISTANT_PROVIDERS } from "../../../../../../src/domain/provider-catalog.js";
 import { LOCAL_WORKSPACE_TARGET, type AssistantProvider, type RemoteThread } from "../../../shared/bridge";
-import { replaceProviderThreads } from "../conversation/session-state";
+import { replaceProviderThreads } from "../../shared/provider-thread-state";
 import { providerDisplayName } from "../../shared/provider-display-name";
 import { bridgeRpc, preferences, setAssistantProvider } from "../../bridgeClient";
 import { PREFERENCE_KEYS } from "../../../shared/preferences";
-import type { AppPage } from "../workspace/workspace-types";
-import type { BridgeConnectionState } from "./connection-state";
-import type { ProviderCatalogs } from "./provider-catalog-state";
+import type { AppPage } from "../../shared/workspace-state";
+import type { BridgeConnectionState } from "../../shared/provider-ui-state";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 

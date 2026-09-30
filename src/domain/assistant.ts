@@ -1,4 +1,5 @@
 import type { AssistantProvider } from "./provider-catalog.js";
+import type { A2ACommunicationSummaryItem } from "./a2a.js";
 
 export type AssistantThread = {
   id: string;
@@ -17,10 +18,12 @@ export type PromptImageAttachment = {
 
 export type TranscriptEntry = {
   id: string;
-  role: "user" | "assistant" | "tool" | "change";
+  role: "user" | "assistant" | "tool" | "change" | "communication";
   text: string;
+  communications?: A2ACommunicationSummaryItem[];
   turnId?: string;
   providerMessageId?: string;
+  responseDurationMs?: number;
   responseCompleted?: boolean;
   toolType?: "commandExecution" | "mcpToolCall" | "webSearch";
   command?: string;

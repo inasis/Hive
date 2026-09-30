@@ -5,7 +5,8 @@ import type { AssistantModel } from "../../../domain/assistant.js";
 import { LOCAL_WORKSPACE_TARGET } from "../../../domain/workspace.js";
 import { assertSshTarget } from "../../transport/workspace-target.js";
 import { parseHiveRelayTarget } from "../../transport/relay-target.js";
-import { isValidKiroSessionId, readKiroSessionAliases } from "./session-metadata.js";
+import { readKiroSessionAliases } from "../../persistence/kiro-session-metadata.js";
+import { isValidKiroSessionId } from "./session-metadata.js";
 import { runKiroCli, runKiroSshCommand, shellQuote } from "./process.js";
 
 type JsonObject = Record<string, unknown>;

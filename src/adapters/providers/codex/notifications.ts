@@ -21,6 +21,11 @@ export function handleCodexNotification(
   if (!eventParams) return;
   const threadId = eventThreadId(eventParams) ?? session.activeThreadId;
   if (!threadId) return;
+  // A newly created thread needs full history as soon as its first turn starts,
+  // including when the UI reopens it while the response is still running.
+  if (method === "turn/started" || method === "turn/completed" || method === "thread/deleted") {
+    session.freshThreadIds.delete(threadId);
+  }
   if (method === "thread/settings/updated") {
     const settings = asObject(eventParams.threadSettings);
     const permissionProfile = firstString(asObject(settings?.activePermissionProfile)?.id);

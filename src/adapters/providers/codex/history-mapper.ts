@@ -1,4 +1,5 @@
 import type { TranscriptEntry } from "../../../domain/assistant.js";
+import { providerA2ASummaryEntryId, providerPromptTranscript } from "../a2a-prompt-context.js";
 
 type JsonObject = Record<string, unknown>;
 
@@ -15,8 +16,16 @@ export function mapCodexTranscript(thread: JsonObject): TranscriptEntry[] {
       const id = firstString(item.id) ?? `entry-${entries.length}`;
       const type = firstString(item.type) ?? "";
       if (type === "userMessage") {
-        const text = contentText(item.content);
-        if (text) entries.push({ id, role: "user", text });
+        const prompt = providerPromptTranscript(contentText(item.content));
+        const turnId = firstString(turn?.id);
+        if (prompt.text) entries.push({ id, role: "user", text: prompt.text, ...(turnId ? { turnId } : {}) });
+        if (prompt.communications.length) entries.push({
+          id: providerA2ASummaryEntryId(prompt.communications),
+          role: "communication",
+          text: "",
+          ...(turnId ? { turnId } : {}),
+          communications: prompt.communications,
+        });
       } else if (type === "agentMessage") {
         const text = firstString(item.text) ?? contentText(item.content);
         const sourceMessageId = firstString(item.id);

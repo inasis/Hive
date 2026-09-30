@@ -1,4 +1,5 @@
 import type { ProviderCatalogUseCases } from "../../application/use-cases/provider-catalog.js";
+import type { ProviderDisconnectUseCases } from "../../application/use-cases/provider-disconnect.js";
 import type { ProviderConversationUseCases } from "../../application/use-cases/provider-conversations.js";
 import type { ProviderForkUseCases } from "../../application/use-cases/provider-forks.js";
 import type { ProviderSkillUseCases } from "../../application/use-cases/provider-skills.js";
@@ -9,7 +10,7 @@ import type { ProviderApprovalUseCases } from "../../application/use-cases/provi
 import type { ProviderSessionUseCases } from "../../application/use-cases/provider-sessions.js";
 import type { WorkspaceFileUseCases } from "../../application/use-cases/workspace-files.js";
 import type { TerminalUseCases } from "../../application/use-cases/terminal.js";
-import { ASSISTANT_PROVIDERS, DEFAULT_ASSISTANT_PROVIDER, type AssistantProvider } from "../../domain/provider-catalog.js";
+import { ASSISTANT_PROVIDERS, type AssistantProvider } from "../../domain/provider-catalog.js";
 import {
   type DaemonApiMethod,
   type DaemonApiRequestMap,
@@ -17,18 +18,19 @@ import {
   type ProviderDaemonApiMethod,
   type SharedDaemonApiMethod,
 } from "../contracts/daemon-api.js";
-import type { DaemonRequestHandlerMap } from "./dispatcher.js";
+import type { DaemonRequestHandlerMap, ResolvedDaemonApiRequestMap } from "./dispatcher.js";
 
 type DaemonRequestHandlers<Method extends DaemonApiMethod> = {
   [Key in Method]: (params: DaemonApiRequestMap[Key]) => Promise<DaemonApiResponseMap[Key]>;
 };
-type ProviderRequestFor<Method extends ProviderDaemonApiMethod> = Omit<DaemonApiRequestMap[Method], "provider"> & { provider: AssistantProvider };
+type ProviderRequestFor<Method extends ProviderDaemonApiMethod> = ResolvedDaemonApiRequestMap[Method];
 type ProviderRequestHandlers = {
   [Key in ProviderDaemonApiMethod]: (params: ProviderRequestFor<Key>) => Promise<DaemonApiResponseMap[Key]>;
 };
 
 export type DaemonRequestHandlerDependencies = {
   providerCatalog: ProviderCatalogUseCases;
+  providerDisconnect: ProviderDisconnectUseCases;
   providerSessions: ProviderSessionUseCases;
   providerConversations: ProviderConversationUseCases;
   providerForks: ProviderForkUseCases;
@@ -62,7 +64,12 @@ export function createDaemonRequestHandlers(dependencies: DaemonRequestHandlerDe
       target,
       { cwd, ...(permissionPresets ? { permissionPresets } : {}), ...(name !== undefined ? { name } : {}) },
     ),
-    openThread: async ({ target, threadId, provider }) => dependencies.providerConversations.openThread(provider, target, threadId),
+    openThread: async ({ target, threadId, provider, includeTranscript }) => dependencies.providerConversations.openThread(
+      provider,
+      target,
+      threadId,
+      { includeTranscript: includeTranscript !== false },
+    ),
     forkSideThread: async ({ target, threadId, provider }) => dependencies.providerForks.forkSideThread(provider, target, threadId),
     forkThread: async ({ target, threadId, provider, turnId, messageId, name }) => dependencies.providerForks.forkThread(
       provider,
@@ -105,8 +112,7 @@ export function createDaemonRequestHandlers(dependencies: DaemonRequestHandlerDe
       },
     ),
     disconnect: async ({ target, provider }) => {
-      dependencies.terminal.stopForTarget(target);
-      await dependencies.providerCatalog.disconnect(provider, target);
+      await dependencies.providerDisconnect.disconnect(provider, target);
       return { disconnected: true as const };
     },
     answerApproval: async ({ target, requestId, decision, provider }) => dependencies.providerApprovals.answerApproval(provider, target, requestId, decision),
@@ -136,23 +142,7 @@ export function createDaemonRequestHandlers(dependencies: DaemonRequestHandlerDe
 
   return {
     listProviders: sharedHandlers.listProviders,
-    connect: (params) => providerHandlers.connect(withDefaultProvider(params)),
-    refresh: (params) => providerHandlers.refresh(withDefaultProvider(params)),
-    createThread: (params) => providerHandlers.createThread(withDefaultProvider(params)),
-    renameThread: (params) => providerHandlers.renameThread(withDefaultProvider(params)),
-    deleteThread: (params) => providerHandlers.deleteThread(withDefaultProvider(params)),
-    openThread: (params) => providerHandlers.openThread(withDefaultProvider(params)),
-    forkSideThread: (params) => providerHandlers.forkSideThread(withDefaultProvider(params)),
-    forkThread: (params) => providerHandlers.forkThread(withDefaultProvider(params)),
-    listSkills: (params) => providerHandlers.listSkills(withDefaultProvider(params)),
-    listCommands: (params) => providerHandlers.listCommands(withDefaultProvider(params)),
-    runCommand: (params) => providerHandlers.runCommand(withDefaultProvider(params)),
-    sendPrompt: (params) => providerHandlers.sendPrompt(withDefaultProvider(params)),
-    steerTurn: (params) => providerHandlers.steerTurn(withDefaultProvider(params)),
-    interruptTurn: (params) => providerHandlers.interruptTurn(withDefaultProvider(params)),
-    updateThreadSettings: (params) => providerHandlers.updateThreadSettings(withDefaultProvider(params)),
-    disconnect: (params) => providerHandlers.disconnect(withDefaultProvider(params)),
-    answerApproval: (params) => providerHandlers.answerApproval(withDefaultProvider(params)),
+    ...providerHandlers,
     terminalStart: sharedHandlers.terminalStart,
     terminalInput: sharedHandlers.terminalInput,
     terminalResize: sharedHandlers.terminalResize,
@@ -160,8 +150,4 @@ export function createDaemonRequestHandlers(dependencies: DaemonRequestHandlerDe
     listWorkspaceFiles: sharedHandlers.listWorkspaceFiles,
     readWorkspaceFile: sharedHandlers.readWorkspaceFile,
   };
-}
-
-function withDefaultProvider<Params extends { provider?: AssistantProvider }>(params: Params): Params & { provider: AssistantProvider } {
-  return { ...params, provider: params.provider ?? DEFAULT_ASSISTANT_PROVIDER };
 }

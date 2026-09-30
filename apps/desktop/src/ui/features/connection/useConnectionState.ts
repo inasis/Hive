@@ -3,8 +3,8 @@ import { ASSISTANT_PROVIDERS, DEFAULT_ASSISTANT_PROVIDER } from "../../../../../
 import { LOCAL_WORKSPACE_TARGET, type AssistantProvider, type AssistantProviderInfo, type RemoteThread } from "../../../shared/bridge";
 import { bridgeRpc, preferences, setAssistantProvider as setBridgeAssistantProvider } from "../../bridgeClient";
 import { PREFERENCE_KEYS } from "../../../shared/preferences";
-import type { BridgeConnectionState } from "./connection-state";
-import type { ProviderCatalogs } from "./provider-catalog-state";
+import type { BridgeConnectionState } from "../../shared/provider-ui-state";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 

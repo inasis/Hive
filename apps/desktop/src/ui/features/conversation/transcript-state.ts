@@ -1,6 +1,10 @@
 import type { TranscriptEntry } from "../../../shared/bridge";
+import { groupTranscriptResponses, type TranscriptResponseGroup } from "../../shared/transcript-groups";
 
-type TranscriptBlock = { kind: "entry"; entry: TranscriptEntry } | { kind: "activity"; id: string; entries: TranscriptEntry[] };
+type TranscriptBlock =
+  | { kind: "entry"; entry: TranscriptEntry }
+  | { kind: "activity"; id: string; entries: TranscriptEntry[] };
+export { groupTranscriptResponses, type TranscriptResponseGroup };
 
 export function groupTranscriptEntries(entries: TranscriptEntry[]): TranscriptBlock[] {
   const blocks: TranscriptBlock[] = [];
@@ -54,6 +58,7 @@ export function upsertEntry(entries: TranscriptEntry[], next: TranscriptEntry): 
   return entries.map((entry, entryIndex) => entryIndex === index ? next : entry);
 }
 
+/** Merge partial A2A events and replace legacy plain-text request entries with their communication card. */
 export function replaceWebSearchEntries(entries: TranscriptEntry[], id: string, next: TranscriptEntry[]): TranscriptEntry[] {
   const isPreviousEntry = (entry: TranscriptEntry) => entry.id === id || entry.id.startsWith(`${id}:query:`);
   const firstIndex = entries.findIndex(isPreviousEntry);

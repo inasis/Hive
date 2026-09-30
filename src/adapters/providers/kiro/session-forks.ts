@@ -5,10 +5,12 @@ import { listKiroSessions } from "./cli.js";
 import { kiroEffortOptions, kiroModes, loadKiroSkills, withKiroEffortOptions } from "./session-catalog-mapper.js";
 import { subscribeKiroSession } from "./session-events.js";
 import { collectKiroTranscript } from "./session-update-mapper.js";
-import { renameKiroSession, saveKiroSessionPolicyPresets } from "./session-metadata.js";
+import { renameKiroSession, saveKiroSessionPolicyPresets } from "../../persistence/kiro-session-metadata.js";
+import { kiroPermissionProfileForPresets } from "./session-metadata.js";
 import type { KiroRemoteSession } from "./session-context.js";
 import { asObject, firstString } from "./session-utils.js";
 import type { KiroRequireOpenThread } from "./thread-access.js";
+import { createKiroA2AMcpServers } from "./a2a-mcp-server.js";
 
 /** Implements Kiro's side conversation, rewind, and response fork operations. */
 export class KiroSessionForkAdapter implements ProviderForkPort {
@@ -98,7 +100,12 @@ export class KiroSessionForkAdapter implements ProviderForkPort {
     const unsubscribeReplay = session.connection.onSessionUpdate(forkedId, ({ update }) => collectKiroTranscript(replay, update));
     let loaded: Record<string, unknown>;
     try {
-      loaded = await session.connection.loadSession(forkedId, forkCwd, session.policyPresetsByThread.get(sourceThreadId) ?? []);
+      loaded = await session.connection.loadSession(
+        forkedId,
+        forkCwd,
+        session.policyPresetsByThread.get(sourceThreadId) ?? [],
+        createKiroA2AMcpServers(target),
+      );
     } finally {
       unsubscribeReplay();
     }
@@ -128,7 +135,7 @@ export class KiroSessionForkAdapter implements ProviderForkPort {
       cwd: forkCwd,
       model,
       effort,
-      permissionProfile: session.policyPresetsByThread.get(forkedId)?.join(",") ?? null,
+      permissionProfile: kiroPermissionProfileForPresets(session.policyPresetsByThread.get(forkedId) ?? []),
       skills,
       modes,
       currentModeId,

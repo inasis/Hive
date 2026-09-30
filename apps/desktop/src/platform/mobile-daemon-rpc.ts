@@ -1,9 +1,11 @@
-import type { DaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-api.js";
+import { parseDaemonApiResponse } from "../../../../src/interfaces/contracts/daemon-response.js";
+import type { DaemonApiMethod, DaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-api.js";
 import { createDaemonRequestPacket, type DaemonResponsePacket } from "../../../../src/interfaces/contracts/daemon-transport.js";
 
 const REQUEST_TIMEOUT_MS = 60_000;
 
 type PendingRequest = {
+  method: DaemonApiMethod;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   timeout: number;
@@ -21,7 +23,7 @@ export class MobileDaemonRpcChannel {
         this.pendingRequests.delete(id);
         reject(new Error("Hive 데몬 응답이 60초 동안 없습니다. 연결 상태와 세션 목록을 확인한 뒤 다시 시도하세요."));
       }, REQUEST_TIMEOUT_MS);
-      this.pendingRequests.set(id, { resolve, reject, timeout });
+      this.pendingRequests.set(id, { method: request.method, resolve, reject, timeout });
       try {
         void Promise.resolve(send(JSON.stringify(createDaemonRequestPacket(id, request)))).catch((error: unknown) => {
           this.rejectRequest(id, asError(error));
@@ -38,7 +40,13 @@ export class MobileDaemonRpcChannel {
     if (!pending) return;
     this.finishRequest(id);
     if (typeof packet.error === "string") pending.reject(new Error(packet.error));
-    else pending.resolve(packet.result);
+    else {
+      try {
+        pending.resolve(parseDaemonApiResponse(pending.method, packet.result));
+      } catch (error) {
+        pending.reject(asError(error));
+      }
+    }
   }
 
   rejectAll(message: string): void {
@@ -47,6 +55,10 @@ export class MobileDaemonRpcChannel {
       pending.reject(new Error(message));
       this.pendingRequests.delete(id);
     }
+  }
+
+  pendingMethods(): DaemonApiMethod[] {
+    return [...new Set([...this.pendingRequests.values()].map((pending) => pending.method))];
   }
 
   private rejectRequest(id: number, error: Error): void {

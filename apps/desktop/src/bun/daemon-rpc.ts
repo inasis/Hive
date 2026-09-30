@@ -1,4 +1,5 @@
-import { parseDaemonApiRequest, type DaemonApiMethod } from "../../../../src/interfaces/contracts/daemon-api.js";
+import type { DaemonApiMethod } from "../../../../src/interfaces/contracts/daemon-api.js";
+import { parseDaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-request.js";
 import { parseDaemonApiResponse } from "../../../../src/interfaces/contracts/daemon-response.js";
 import { createDaemonRequestPacket, type DaemonResponsePacket } from "../../../../src/interfaces/contracts/daemon-transport.js";
 

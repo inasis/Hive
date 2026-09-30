@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline/promises";
 import type { CodexCliEvent, CodexCliOpenedSession } from "../../application/ports/codex-cli.js";
+import type { SkillInputPreparation, SkillSelection } from "../../application/ports/skills.js";
 import {
   completerForSkills,
   renderActivity,
@@ -13,14 +14,16 @@ import {
   renderTurnComplete,
 } from "./terminal-ui.js";
 import { sanitizeTerminalChunk } from "./terminal-text.js";
+import { parseSkillSelector } from "./skill-selector.js";
 
 type Ask = (prompt: string) => Promise<string>;
 type SkillInvocation = { selector: string; request: string };
 
 export type CodexResumeActions = {
   validateTarget(target: string): void;
+  validateThreadId(threadId: string): void;
   openSession(target: string, threadId: string): Promise<CodexCliOpenedSession>;
-  buildSkillInput(target: string, threadId: string, selector: string, request: string): Promise<{ inputText: string; skill: { name: string; provider: string } }>;
+  buildSkillInput(target: string, threadId: string, selection: SkillSelection, request: string): Promise<SkillInputPreparation>;
   sendPrompt(target: string, threadId: string, text: string): Promise<void>;
   answerApproval(target: string, requestId: number | string, decision: "accept" | "acceptForSession" | "decline"): Promise<void>;
   subscribe(listener: (event: CodexCliEvent) => void): () => void;
@@ -30,7 +33,7 @@ export type CodexResumeActions = {
 /** Interactive terminal interface for resuming a Codex session through application actions. */
 export async function resumeCodexThread(target: string, threadId: string, actions: CodexResumeActions): Promise<void> {
   actions.validateTarget(target);
-  if (!/^[A-Za-z0-9_-]{1,128}$/.test(threadId)) throw new Error("Thread ID contains unsupported characters");
+  actions.validateThreadId(threadId);
   if (!process.stdin.isTTY) throw new Error("The resume command needs an interactive terminal");
 
   let reader: ReturnType<typeof createInterface> | undefined;
@@ -118,9 +121,14 @@ export async function resumeCodexThread(target: string, threadId: string, action
       let inputText = text;
       if (invocation) {
         try {
-          const result = await actions.buildSkillInput(target, threadId, invocation.selector, invocation.request);
-          inputText = result.inputText;
-          process.stdout.write(`${renderNotice(`Invoking ${result.skill.provider} skill · ${result.skill.name}`)}\n`);
+          const result = await actions.buildSkillInput(target, threadId, parseSkillSelector(invocation.selector), invocation.request);
+          if (result.status === "ready") {
+            inputText = result.inputText;
+            process.stdout.write(`${renderNotice(`Invoking ${result.skill.provider} skill · ${result.skill.name}`)}\n`);
+          } else {
+            process.stderr.write(renderNotice(skillPreparationMessage(result, invocation.selector), "error"));
+            continue;
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           process.stderr.write(renderNotice(message, "error"));
@@ -141,6 +149,13 @@ export async function resumeCodexThread(target: string, threadId: string, action
     reader?.close();
     await actions.disconnect(target);
   }
+}
+
+function skillPreparationMessage(result: Exclude<SkillInputPreparation, { status: "ready" }>, selector: string): string {
+  if (result.status === "notFound") return `No available skill named '${selector}'. Use /skills to browse.`;
+  if (result.status === "disabled") return `The '${result.skill.name}' skill is disabled.`;
+  const choices = result.skills.map((skill) => `/skill:${skill.provider.toLowerCase()}:${skill.name}`).join("  ");
+  return `Skill name '${result.name}' is ambiguous. Choose ${choices}`;
 }
 
 async function handleApprovalRequest(event: Extract<CodexCliEvent, { type: "commandApproval" | "fileApproval" }>, actions: CodexResumeActions, ask: Ask): Promise<void> {

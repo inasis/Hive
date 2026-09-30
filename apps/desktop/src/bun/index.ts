@@ -1,18 +1,12 @@
 import { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
-import { PtyTerminalAdapter } from "../../../../src/adapters/terminal/pty-manager.js";
-import { dispatchDaemonRequest, subscribeDaemonEvents } from "../../../../src/composition/daemon.js";
-import { RoutedWorkspaceFileAdapter } from "../../../../src/adapters/workspace/files.js";
-import { TerminalUseCases } from "../../../../src/application/use-cases/terminal.js";
-import { WorkspaceFileUseCases } from "../../../../src/application/use-cases/workspace-files.js";
-import { serializeTerminalEvent } from "../../../../src/interfaces/contracts/daemon-terminal-event-serializer.js";
+import { dispatchDaemonRequest, startConfiguredA2AHttpServer, stopA2AHttpServer, subscribeDaemonEvents } from "../../../../src/composition/daemon.js";
 import type { DaemonApiMethod, DaemonApiRequestMap, DaemonApiResponseMap } from "../../../../src/interfaces/contracts/daemon-api.js";
 import type { BridgeEvent, GtkSettings, HiveBridgeSchema } from "../shared/bridge.js";
 import { PinnedDaemonClient, type DaemonCredentials } from "./daemon-client.js";
+import { parseGtkSettings } from "./gtk-settings.js";
 
 let mainWindow: BrowserWindow;
 let daemonBridge: PinnedDaemonClient | undefined;
-const terminalUseCases = new TerminalUseCases(new PtyTerminalAdapter((event) => publishBridgeEvent(serializeTerminalEvent(event))));
-const workspaceFileUseCases = new WorkspaceFileUseCases(new RoutedWorkspaceFileAdapter());
 
 const DEFAULT_GTK_SETTINGS: GtkSettings = {
   gtk: { version: 3, theme: "", iconTheme: "", font: "", fontFamily: "", dark: false },
@@ -43,11 +37,8 @@ async function readGtkSettings(): Promise<GtkSettings> {
     const helper = Bun.spawn([helperPath], { stdout: "pipe", stderr: "ignore" });
     const output = await new Response(helper.stdout).text();
     if (await helper.exited !== 0) return DEFAULT_GTK_SETTINGS;
-    const result = JSON.parse(output) as GtkSettings;
-    if (!result?.window?.decorationLayout || !Array.isArray(result.window.decorationLayout.left) || !Array.isArray(result.window.decorationLayout.right) || !result.titleButtons || !Number.isFinite(result.titleButtons.spacing)) {
-      return DEFAULT_GTK_SETTINGS;
-    }
-    return result;
+    const decoded: unknown = JSON.parse(output);
+    return parseGtkSettings(decoded) ?? DEFAULT_GTK_SETTINGS;
   } catch {
     return DEFAULT_GTK_SETTINGS;
   }
@@ -133,6 +124,7 @@ const requestHandlers: NonNullable<BunRpcConfig["handlers"]["requests"]> = {
         }
         return { maximized: mainWindow.isMaximized() };
       },
+      getHostPlatform: () => ({ platform: process.platform }),
       getGtkSettings: () => readGtkSettings(),
       getWindowFrame: () => ({ ...mainWindow.getFrame(), maximized: mainWindow.isMaximized() }),
       setWindowFrame: ({ x, y, width, height }) => {
@@ -148,37 +140,27 @@ const requestHandlers: NonNullable<BunRpcConfig["handlers"]["requests"]> = {
         return { resized: true as const };
       },
       updateThreadSettings: providerRequest("updateThreadSettings"),
-      disconnect: async (params) => {
-        terminalUseCases.stopForTarget(params.target);
-        return providerRequest("disconnect")(params);
-      },
+      disconnect: providerRequest("disconnect"),
       answerApproval: providerRequest("answerApproval"),
-      terminalStart: async ({ target, cwd, sessionId, cols, rows }) => {
-        await terminalUseCases.start({ target, cwd, sessionId, cols, rows });
-        return { sessionId, started: true as const };
-      },
-      terminalInput: async ({ target, sessionId, data }) => {
-        terminalUseCases.input(target, sessionId, data);
-        return { written: true as const };
-      },
-      terminalResize: async ({ target, sessionId, cols, rows }) => {
-        terminalUseCases.resize(target, sessionId, cols, rows);
-        return { resized: true as const };
-      },
-      terminalStop: async ({ target, sessionId }) => {
-        terminalUseCases.stop(target, sessionId);
-        return { stopped: true as const };
-      },
-      listWorkspaceFiles: async ({ target, cwd, path }) => workspaceFileUseCases.list(target, cwd, path),
-      readWorkspaceFile: async ({ target, cwd, path }) => workspaceFileUseCases.read(target, cwd, path),
+      terminalStart: providerRequest("terminalStart"),
+      terminalInput: providerRequest("terminalInput"),
+      terminalResize: providerRequest("terminalResize"),
+      terminalStop: providerRequest("terminalStop"),
+      listWorkspaceFiles: providerRequest("listWorkspaceFiles"),
+      readWorkspaceFile: providerRequest("readWorkspaceFile"),
 };
 
 const rpc = BrowserView.defineRPC<HiveBridgeSchema>({ handlers: { requests: requestHandlers, messages: {} } });
 subscribeDaemonEvents((event) => rpc.send.event(event));
+await startConfiguredA2AHttpServer();
+process.once("SIGINT", () => { void stopA2AHttpServer(); });
+process.once("SIGTERM", () => { void stopA2AHttpServer(); });
 
 mainWindow = new BrowserWindow({
   title: "Hive",
-  url: "views://mainview/index.html",
+  // The webview needs the native host platform before its first render so it
+  // can build the right custom titlebar while the RPC bridge initializes.
+  url: `views://mainview/index.html?hostPlatform=${encodeURIComponent(process.platform)}`,
   frame: { width: 1440, height: 940, x: 120, y: 80 },
   styleMask: { Resizable: true },
   titleBarStyle: "hidden",

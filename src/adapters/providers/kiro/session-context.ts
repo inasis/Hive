@@ -32,6 +32,7 @@ export type KiroRemoteSession = {
   policyPresetsByThread: Map<string, string[]>;
   transcriptsByThread: Map<string, TranscriptEntry[]>;
   activeTurnIds: Map<string, string>;
+  toolFailuresByThread: Map<string, { turnId: string; message: string }>;
   pendingApprovals: Map<string, { threadId: string; options: JsonObject[] }>;
   terminalsById: Map<string, KiroRemoteTerminal>;
   updateUnsubscribers: Map<string, () => void>;
@@ -137,6 +138,7 @@ export class KiroSessionContext {
         policyPresetsByThread: new Map(),
         transcriptsByThread: new Map(),
         activeTurnIds: new Map(),
+        toolFailuresByThread: new Map(),
         pendingApprovals: new Map(),
         terminalsById: new Map(),
         updateUnsubscribers: new Map(),

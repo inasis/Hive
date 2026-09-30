@@ -10,6 +10,7 @@ export type CodexRemoteSession = {
   api: CodexAppServerApi;
   activeThreadId?: string;
   openedThreadIds: Set<string>;
+  freshThreadIds: Set<string>;
   unsubscribe: () => void;
   skillsByThread: Map<string, SkillCatalog>;
   models: AssistantModel[];
@@ -49,6 +50,7 @@ export class CodexSessionContext {
       const session: CodexRemoteSession = {
         api,
         openedThreadIds: new Set(),
+        freshThreadIds: new Set(),
         unsubscribe: () => {},
         skillsByThread: new Map(),
         models: [],

@@ -1,15 +1,15 @@
 import type { AssistantProvider, RemoteCommand, RemoteSkill, RemoteThread, TranscriptEntry } from "../../../shared/bridge";
-import type { BridgeConnectionState } from "./connection-state";
-import type { ProviderCatalogs } from "./provider-catalog-state";
-import type { SideChatTab } from "../conversation/session-state";
-import type { ThreadViewStore } from "../conversation/thread-view-store";
-import type { ConversationRuntime } from "../conversation/useConversationRuntime";
+import type { BridgeConnectionState } from "../../shared/provider-ui-state";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
+import type { SideChatTab } from "../../shared/conversation-view";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
 
 /** Define connection transitions that reset or preserve the active UI session view. */
 export function createConnectionViewLifecycle(dependencies: {
   refs: {
-    threadViews: ThreadViewStore;
-    runtime: ConversationRuntime;
+    threadViews: ThreadViewStorePort;
+    runtime: ConversationRuntimePort;
   };
   setters: {
     setConnectionState(value: BridgeConnectionState): void;

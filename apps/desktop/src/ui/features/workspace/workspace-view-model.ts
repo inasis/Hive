@@ -1,8 +1,8 @@
 import type { AssistantProvider, RemoteModel, RemoteThread } from "../../../shared/bridge";
-import type { ProviderCatalogs } from "../connection/provider-catalog-state";
-import type { ConversationRuntime } from "../conversation/useConversationRuntime";
-import type { ThreadViewStore } from "../conversation/thread-view-store";
-import type { SideChatTab } from "../conversation/session-state";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
+import type { SideChatTab } from "../../shared/conversation-view";
 import { providerDisplayName } from "../../shared/provider-display-name";
 
 export function deriveWorkspaceViewModel(input: {
@@ -16,8 +16,8 @@ export function deriveWorkspaceViewModel(input: {
   busy: boolean;
   currentModel: string;
   currentEffort: string | null;
-  runtime: ConversationRuntime;
-  threadViews: ThreadViewStore;
+  runtime: ConversationRuntimePort;
+  threadViews: ThreadViewStorePort;
 }) {
   const {
     assistantProvider,

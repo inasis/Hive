@@ -1,8 +1,8 @@
-import type { ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
+import type { ProviderOpenThreadOptions, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
 import type { KiroRemoteSession, KiroSessionContext } from "./session-context.js";
 
 type OpenThread = (target: string, threadId: string) => Promise<ProviderOpenThreadResult>;
-type LoadThread = (target: string, threadId: string) => Promise<ProviderOpenThreadResult>;
+type LoadThread = (target: string, threadId: string, options?: ProviderOpenThreadOptions) => Promise<ProviderOpenThreadResult>;
 export type KiroRequireOpenThread = (target: string, threadId: string) => Promise<KiroRemoteSession>;
 
 /** Serializes Kiro session hydration and reopens threads after ACP reconnects. */
@@ -11,11 +11,11 @@ export class KiroThreadAccess {
 
   constructor(private readonly context: KiroSessionContext) {}
 
-  async openThread(target: string, threadId: string, loadThread: LoadThread): Promise<ProviderOpenThreadResult> {
+  async openThread(target: string, threadId: string, loadThread: LoadThread, options?: ProviderOpenThreadOptions): Promise<ProviderOpenThreadResult> {
     const key = threadRecoveryKey(target, threadId);
     const pending = this.openingThreads.get(key);
     if (pending) return pending;
-    const task = loadThread(target, threadId).then((result) => {
+    const task = loadThread(target, threadId, options).then((result) => {
       this.context.forgetDisconnectedThread(target, threadId);
       return result;
     });

@@ -1,5 +1,6 @@
 import type { AssistantCommand, ReasoningEffort } from "../../domain/assistant.js";
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
+import type { A2ACommunicationSummaryItem } from "../../domain/a2a.js";
 
 export type AssistantToolActivity =
   | { kind: "commandExecution"; id?: string; command?: string; output?: string; status?: string }
@@ -17,6 +18,7 @@ export type AssistantApprovalDetails = {
 
 /** Provider and workspace events exchanged between adapters and application composition. */
 export type AssistantEventPayload =
+  | { type: "threadCreated"; title: string; cwd: string; preview: string; updatedAt: string | number | null }
   | { type: "threadRenamed"; title: string }
   | { type: "threadDeleted" }
   | { type: "transcriptCleared" }
@@ -24,6 +26,7 @@ export type AssistantEventPayload =
   | { type: "turnCompleted"; turnId?: string; status?: string; error?: string }
   | { type: "assistantDelta"; turnId: string; messageId: string; text: string }
   | { type: "assistantMessageCompleted"; turnId: string; messageId: string; text: string }
+  | { type: "a2aCommunicationSummary"; summaryId: string; communications: A2ACommunicationSummaryItem[]; responseTurnId?: string }
   | { type: "threadSettingsUpdated"; settings: {
       model?: string;
       effort?: string;

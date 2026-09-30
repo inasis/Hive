@@ -16,6 +16,8 @@ Linux 데스크톱 / Android (공유 React 화면) ─ WSS ── Hive 데몬
 - `apps/android`: 같은 UI를 사용하는 Capacitor Android 앱
 - `src`: WSS 데몬, provider 어댑터(Codex/OpenCode/Kiro), SSH/TCP 릴레이 전송, 터미널·파일 도구, CLI
 
+저장소 루트의 npm workspaces가 데스크톱과 Android 패키지를 관리하며, 의존성 설치와 lockfile은 루트에서 한 번만 관리합니다.
+
 Electrobun은 Linux, Windows, macOS 데스크톱을 빌드합니다. Linux 데스크톱과 Android는 기본으로 데몬 페어링 화면을 엽니다. Linux에서는 SSH/릴레이 직접 연결로 전환할 수도 있습니다. Android 휴대폰은 Hive 데몬에 연결하며 SSH나 Codex를 직접 실행하지 않습니다.
 
 데몬 WSS API의 `listProviders` 요청은 provider별 기능 목록을 돌려줍니다. provider별 요청에는 provider ID를 보낼 수 있습니다. 이전 클라이언트가 ID를 생략하면 Codex를 사용하고, 지원하지 않는 ID는 오류로 거부합니다. `connect`는 선택한 provider의 모델 목록을 돌려주며, 열린 세션의 모델은 `updateThreadSettings`로 바꿉니다.
@@ -25,7 +27,7 @@ Electrobun은 Linux, Windows, macOS 데스크톱을 빌드합니다. Linux 데�
 Node.js 20 이상과 npm이 필요합니다.
 
 ```sh
-npm ci --prefix apps/desktop
+npm ci
 npm run desktop:dev
 ```
 
@@ -36,7 +38,7 @@ npm run desktop:dev
 Windows x64에서 Node.js 20 이상과 npm을 설치한 뒤 저장소 루트에서 실행합니다.
 
 ```powershell
-npm ci --prefix apps/desktop
+npm ci
 npm run desktop:build
 ```
 
@@ -44,10 +46,11 @@ Windows 실행 파일과 설치 패키지는 `apps/desktop/artifacts/`에 생성
 
 ## Android 빌드
 
-Node.js 20 이상, Java 17 이상, Android SDK platform 35와 Build Tools 35.0.0이 필요합니다.
+Node.js 20 이상, Java 21, Android SDK platform 35와 Build Tools 35.0.0이 필요합니다.
 
 ```sh
-./scripts/build-android.sh
+npm ci
+npm run android:build
 ```
 
 스크립트가 React 화면을 빌드하고 Capacitor Android 프로젝트에 복사한 뒤, 디버그 APK를 `artifacts/android/Hive-android-debug.apk`에 둡니다. Android Studio에서 `apps/android/android`를 열어 기기에서 실행하거나 릴리스 서명을 설정할 수 있습니다.
@@ -61,7 +64,7 @@ npm ci
 npm run daemon
 ```
 
-`npm run daemon`이 데몬을 빌드한 뒤 바로 실행합니다. 데몬이 `wss://192.168.x.x:4753/rpc` 같은 LAN 주소, 인증서 SHA-256 지문, 페어링 토큰을 출력합니다. Linux 데스크톱이나 Android 연결 화면에 세 값을 한 번 입력하면 됩니다. 주소가 여러 개 나오면 괄호에 표시된 네트워크 인터페이스를 보고 클라이언트와 같은 Wi‑Fi 주소를 고르세요. 컴퓨터 방화벽에서 TCP 4753 연결도 허용해야 합니다. 앱은 입력한 지문과 일치하는 데몬 인증서에만 연결합니다. 데몬이 인증서와 토큰을 `~/.config/hive/`에 저장하므로 다음 실행에서도 페어링 정보를 재사용할 수 있습니다. 데몬을 종료하려면 터미널에서 `Ctrl+C`를 누르세요.
+`npm run daemon`은 데몬을 빌드하고 실행합니다. 이 명령을 다시 실행하면 같은 명령으로 관리하는 데몬을 기존 CLI 인자와 환경으로 재시작합니다. 연결된 클라이언트는 prompt 제출 중 데몬 연결이 끊기면 동일 요청을 메모리에 보관했다가 provider 복구 뒤 한 번 재전송합니다. 해당 thread의 turn 시작 이벤트를 이미 받은 경우에는 재전송하지 않으며 prompt를 디스크에 쓰지 않습니다. 데몬은 `wss://192.168.x.x:4753/rpc` 같은 LAN 주소, 인증서 SHA-256 지문, 페어링 토큰을 출력합니다. Linux 데스크톱이나 Android 연결 화면에 세 값을 한 번 입력하면 됩니다. 주소가 여러 개 나오면 괄호에 표시된 네트워크 인터페이스를 보고 클라이언트와 같은 Wi‑Fi 주소를 고르세요. 컴퓨터 방화벽에서 TCP 4753 연결도 허용해야 합니다. 앱은 입력한 지문과 일치하는 데몬 인증서에만 연결합니다. 데몬이 인증서와 토큰을 `~/.config/hive/`에 저장하므로 다음 실행에서도 페어링 정보를 재사용할 수 있습니다. 데몬을 종료하려면 터미널에서 `Ctrl+C`를 누르세요.
 
 집 밖에서도 공인 IP로 접속하려면 라우터에서 TCP 4753을 데몬 컴퓨터의 LAN IP(예: `192.168.0.5`)와 같은 포트 4753으로 포트 전달하고, 컴퓨터 방화벽에서도 허용하세요. 공인 IP 주소를 데몬 출력에 표시하려면 다음처럼 실행합니다.
 

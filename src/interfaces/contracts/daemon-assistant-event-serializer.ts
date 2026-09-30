@@ -1,5 +1,5 @@
 import type { AssistantEvent } from "../../application/ports/events.js";
-import type { SerializedBridgeEvent } from "./daemon-events.js";
+import type { SerializedBridgeEvent, SerializedThreadSettings } from "./daemon-events.js";
 
 /** Serialize application assistant events to the established bridge method/params shape. */
 export function serializeAssistantEvent(event: AssistantEvent): SerializedBridgeEvent {
@@ -9,6 +9,12 @@ export function serializeAssistantEvent(event: AssistantEvent): SerializedBridge
     ...(event.provider ? { provider: event.provider } : {}),
   };
   switch (event.type) {
+    case "threadCreated":
+      return {
+        ...context,
+        method: "thread/created",
+        params: { threadId: event.threadId, name: event.title, cwd: event.cwd, preview: event.preview, updatedAt: event.updatedAt },
+      };
     case "threadRenamed":
       return { ...context, method: "thread/name/updated", params: { threadId: event.threadId, name: event.title } };
     case "threadDeleted":
@@ -38,6 +44,17 @@ export function serializeAssistantEvent(event: AssistantEvent): SerializedBridge
         ...context,
         method: "item/completed",
         params: { threadId: event.threadId, turnId: event.turnId, item: { id: event.messageId, type: "agentMessage", text: event.text } },
+      };
+    case "a2aCommunicationSummary":
+      return {
+        ...context,
+        method: "hive/a2a/communication-summary",
+        params: {
+          threadId: event.threadId,
+          summaryId: event.summaryId,
+          communications: event.communications,
+          ...(event.responseTurnId ? { responseTurnId: event.responseTurnId } : {}),
+        },
       };
     case "threadSettingsUpdated":
       return {
@@ -89,7 +106,7 @@ export function serializeAssistantEvent(event: AssistantEvent): SerializedBridge
   }
 }
 
-function serializeThreadSettings(settings: Extract<AssistantEvent, { type: "threadSettingsUpdated" }>['settings']): Record<string, unknown> {
+function serializeThreadSettings(settings: Extract<AssistantEvent, { type: "threadSettingsUpdated" }>['settings']): SerializedThreadSettings {
   return {
     ...(settings.model ? { model: settings.model } : {}),
     ...(settings.effort ? { effort: settings.effort } : {}),

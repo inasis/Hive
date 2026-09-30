@@ -75,7 +75,7 @@ const providers = [
       requiresModelBeforePrompt: true,
       reasoningEffort: true,
       permissionProfileCreation: true,
-      permissionProfileUpdates: false,
+      permissionProfileUpdates: true,
       turnSteering: false,
       approvals: true,
       createNamedSessions: true,
@@ -103,14 +103,24 @@ export const DEFAULT_ASSISTANT_PROVIDER = ASSISTANT_PROVIDERS[0].id;
 export type AssistantProvider = (typeof ASSISTANT_PROVIDERS)[number]["id"];
 export type AssistantProviderInfo = (typeof ASSISTANT_PROVIDERS)[number];
 export type AssistantProviderCapability = keyof AssistantProviderCapabilities;
+export type DefaultAssistantProvider = typeof DEFAULT_ASSISTANT_PROVIDER;
+export type AssistantProvidersWithCapability<Capability extends AssistantProviderCapability> =
+  Extract<AssistantProviderInfo, { capabilities: Record<Capability, true> }>["id"];
+export const ASSISTANT_PROVIDER_CAPABILITY_KEYS: readonly AssistantProviderCapability[] = Object.freeze(
+  Object.keys(ASSISTANT_PROVIDERS[0].capabilities) as AssistantProviderCapability[],
+);
 
 export function isAssistantProvider(value: unknown): value is AssistantProvider {
   return typeof value === "string" && ASSISTANT_PROVIDERS.some((provider) => provider.id === value);
 }
 
+export function assistantProviderSupports<Capability extends AssistantProviderCapability>(
+  provider: AssistantProvider,
+  capability: Capability,
+): provider is AssistantProvidersWithCapability<Capability>;
 export function assistantProviderSupports(
   provider: AssistantProvider,
   capability: AssistantProviderCapability,
 ): boolean {
-  return ASSISTANT_PROVIDERS.find((item) => item.id === provider)?.capabilities[capability] ?? false;
+  return ASSISTANT_PROVIDERS.find((item) => item.id === provider)?.capabilities[capability] === true;
 }

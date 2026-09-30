@@ -31,11 +31,17 @@ import okhttp3.WebSocketListener;
 public class HiveTransportPlugin extends Plugin {
     private volatile WebSocket socket;
     private volatile OkHttpClient client;
+    private volatile String socketConnectionId;
 
     @PluginMethod
     public synchronized void connect(PluginCall call) {
         String endpoint = call.getString("url");
         String fingerprint = call.getString("fingerprint");
+        String connectionId = call.getString("connectionId");
+        if (connectionId == null || connectionId.isEmpty()) {
+            call.reject("Missing Hive connection identifier");
+            return;
+        }
         if (endpoint == null || !endpoint.startsWith("wss://")) {
             call.reject("Android requires a wss:// endpoint");
             return;
@@ -72,43 +78,49 @@ public class HiveTransportPlugin extends Plugin {
             Request request = new Request.Builder().url(endpoint).build();
             client = nextClient;
             final boolean[] opened = { false };
-            socket = nextClient.newWebSocket(request, new WebSocketListener() {
+            WebSocket nextSocket = nextClient.newWebSocket(request, new WebSocketListener() {
                 @Override
-                public void onOpen(WebSocket webSocket, Response response) {
+                public synchronized void onOpen(WebSocket webSocket, Response response) {
+                    if (!isActiveConnection(webSocket, nextClient, connectionId)) return;
                     opened[0] = true;
                     call.resolve();
                 }
 
                 @Override
-                public void onMessage(WebSocket webSocket, String text) {
+                public synchronized void onMessage(WebSocket webSocket, String text) {
+                    if (!isActiveConnection(webSocket, nextClient, connectionId)) return;
                     JSObject event = new JSObject();
+                    event.put("connectionId", connectionId);
                     event.put("data", text);
                     notifyListeners("message", event);
                 }
 
                 @Override
-                public void onFailure(WebSocket webSocket, Throwable error, Response response) {
-                    socket = null;
-                    closeClient();
+                public synchronized void onFailure(WebSocket webSocket, Throwable error, Response response) {
+                    if (!clearActiveConnection(webSocket, nextClient, connectionId)) return;
                     String message = error.getMessage() == null ? "WebSocket connection failed" : error.getMessage();
                     if (!opened[0]) call.reject(message);
                     JSObject event = new JSObject();
+                    event.put("connectionId", connectionId);
                     event.put("message", message);
                     notifyListeners("error", event);
                 }
 
                 @Override
-                public void onClosed(WebSocket webSocket, int code, String reason) {
-                    socket = null;
-                    closeClient();
+                public synchronized void onClosed(WebSocket webSocket, int code, String reason) {
+                    if (!clearActiveConnection(webSocket, nextClient, connectionId)) return;
                     JSObject event = new JSObject();
+                    event.put("connectionId", connectionId);
                     event.put("code", code);
                     event.put("reason", reason);
                     notifyListeners("close", event);
                 }
             });
+            socket = nextSocket;
+            socketConnectionId = connectionId;
         } catch (Exception exception) {
             socket = null;
+            socketConnectionId = null;
             closeClient();
             call.reject("Could not start the pinned TLS connection: " + exception.getMessage(), exception);
         }
@@ -117,8 +129,9 @@ public class HiveTransportPlugin extends Plugin {
     @PluginMethod
     public void send(PluginCall call) {
         String data = call.getString("data");
+        String connectionId = call.getString("connectionId");
         WebSocket active = socket;
-        if (active == null || data == null) {
+        if (active == null || data == null || connectionId == null || !connectionId.equals(socketConnectionId)) {
             call.reject("Hive WebSocket is not connected");
             return;
         }
@@ -155,8 +168,14 @@ public class HiveTransportPlugin extends Plugin {
 
     @PluginMethod
     public synchronized void disconnect(PluginCall call) {
+        String requestedConnectionId = call.getString("connectionId");
+        if (requestedConnectionId != null && !requestedConnectionId.equals(socketConnectionId)) {
+            call.resolve();
+            return;
+        }
         WebSocket active = socket;
         socket = null;
+        socketConnectionId = null;
         if (active != null) active.close(1000, "Client disconnected");
         closeClient();
         call.resolve();
@@ -166,17 +185,40 @@ public class HiveTransportPlugin extends Plugin {
     protected synchronized void handleOnDestroy() {
         WebSocket active = socket;
         socket = null;
+        socketConnectionId = null;
         if (active != null) active.cancel();
         closeClient();
     }
 
+    @Override
+    protected void handleOnResume() {
+        notifyListeners("resume", new JSObject());
+    }
+
     private synchronized void closeClient() {
+        closeClient(client);
+    }
+
+    private synchronized void closeClient(OkHttpClient expected) {
+        if (expected == null || client != expected) return;
         OkHttpClient active = client;
         client = null;
         if (active == null) return;
         active.dispatcher().cancelAll();
         active.connectionPool().evictAll();
         active.dispatcher().executorService().shutdown();
+    }
+
+    private synchronized boolean isActiveConnection(WebSocket expectedSocket, OkHttpClient expectedClient, String connectionId) {
+        return socket == expectedSocket && client == expectedClient && connectionId.equals(socketConnectionId);
+    }
+
+    private synchronized boolean clearActiveConnection(WebSocket expectedSocket, OkHttpClient expectedClient, String connectionId) {
+        if (!isActiveConnection(expectedSocket, expectedClient, connectionId)) return false;
+        socket = null;
+        socketConnectionId = null;
+        closeClient(expectedClient);
+        return true;
     }
 
     private static byte[] parseFingerprint(String value) {

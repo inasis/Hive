@@ -1,9 +1,9 @@
 import { useState } from "react";
 import type { AssistantProvider } from "../../../shared/bridge";
 import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
-import type { ThreadViewStore } from "./thread-view-store";
-import type { ConversationRuntime } from "./useConversationRuntime";
-import type { LocalImageAttachment } from "./session-state";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
+import type { LocalImageAttachment } from "../../shared/conversation-view";
 
 export function useImageAttachments({ state, runtime, threadViews, setters }: {
   state: {
@@ -12,8 +12,8 @@ export function useImageAttachments({ state, runtime, threadViews, setters }: {
     target: string;
     threadId: string;
   };
-  runtime: ConversationRuntime;
-  threadViews: ThreadViewStore;
+  runtime: ConversationRuntimePort;
+  threadViews: ThreadViewStorePort;
   setters: {
     setDraft(update: (current: string) => string): void;
     setNotice(notice: string): void;

@@ -2,7 +2,7 @@
 
 [한국어 사용 안내](./README.ko.md)
 
-TypeScript CLI and Electrobun desktop app for discovering, archiving, and interactively resuming Codex CLI sessions. The Linux desktop and Android clients use a Hive daemon over pinned WSS by default; desktop apps can also connect directly over SSH or a TCP relay. In relay mode, a Hive host agent runs Codex's local app-server and the desktop app connects to its stream through a relay. It does not embed Paseo code.
+TypeScript CLI and Electrobun desktop app for discovering, archiving, and interactively resuming Codex CLI sessions. The desktop and Android clients connect through a Hive daemon over pinned WSS by default; desktop apps can also connect directly over SSH or a TCP relay. In relay mode, a Hive host agent runs Codex's local app-server and the desktop app connects to its stream through a relay.
 
 ## Requirements
 
@@ -19,10 +19,10 @@ npm run build
 node dist/cli.js --help
 ```
 
-The Electrobun desktop app, based on PiBun's main workspace layout, is built as a separate app:
+The Electrobun desktop app is built from the repository root:
 
 ```sh
-npm install --prefix apps/desktop
+npm ci
 npm run build:app        # Build the React screen
 npm run desktop:build    # Package the Electrobun desktop app
 npm run desktop:dev      # Launch the desktop app
@@ -32,13 +32,13 @@ npm run dev:app          # Start the browser preview server
 Build the Windows x64 executable and installer on Windows with Node.js 20 or newer:
 
 ```powershell
-npm ci --prefix apps/desktop
+npm ci
 npm run desktop:build
 ```
 
 The package is written to `apps/desktop/artifacts/`. Electrobun builds for the host OS, so use a Windows machine or download the `Hive-windows-x64` artifact from the **Electrobun Windows build** GitHub Actions run.
 
-The main screen is independently implemented using the workspace and conversation layout in [PiBun](https://github.com/khairold/pibun) as a reference. The desktop app separates Sessions, Skills, and Connection Settings into distinct pages. On Linux it starts with daemon pairing; choose **SSH 또는 릴레이로 직접 연결** to use the direct SSH or relay workflow instead. On Windows and macOS, open Connection Settings and enter an SSH target or a Hive relay URI. Select an existing thread to resume it, or use the `+` beside a workspace to create a new Codex session in that remote directory. The new-session dialog also accepts another remote path. Model and Thinking selectors update the active Codex thread through app-server and apply to the next turn.
+The desktop app separates Sessions, Skills, and Connection Settings into distinct pages. On Linux it starts with daemon pairing; choose **SSH 또는 릴레이로 직접 연결** to use the direct SSH or relay workflow instead. On Windows and macOS, open Connection Settings and enter an SSH target or a Hive relay URI. Select an existing thread to resume it, or use the `+` beside a workspace to create a new Codex session in that remote directory. The new-session dialog also accepts another remote path. Model and Thinking selectors update the active Codex thread through app-server and apply to the next turn.
 
 The workspace has three views: **Chat**, **Terminal**, and **Files**. Terminal starts an interactive PTY in the active workspace over SSH, or asks the relay host agent to open a PTY on the remote computer. Files lists directories and previews UTF-8 text files through SSH or the relay. File access is read-only, stays inside the active workspace, and previews are limited to 1 MiB per file.
 
@@ -50,10 +50,11 @@ The app composer supports `/skills`, `/skill:<name>`, `/resume <thread-id>`, `/h
 
 The Capacitor Android app packages the same React UI as the Electrobun desktop app. Android and Linux daemon mode do not start SSH or Codex on the client. They send the existing UI RPC calls to the Hive daemon, which uses its local Codex login, terminal, and workspace access.
 
-Build the debug APK with Node.js 20+, Java 17+, and Android SDK platform 35 / Build Tools 35.0.0:
+Build the debug APK with Node.js 20+, Java 21, and Android SDK platform 35 / Build Tools 35.0.0:
 
 ```sh
-./scripts/build-android.sh
+npm ci
+npm run android:build
 ```
 
 The build stages `artifacts/android/Hive-android-debug.apk`. Open `apps/android/android` in Android Studio to run it on a device or configure release signing.
@@ -151,7 +152,7 @@ Input Hive does not handle is sent to the remote Codex session as a regular mess
 
 SSH mode starts Codex app-server and terminal PTYs through SSH. The Files view runs a bounded, read-only Python helper over SSH. Relay mode runs Codex app-server, terminal PTY, and file requests through separate connections to the host daemon. The relay keeps in-memory pairing state and forwards encrypted bytes without interpreting their contents.
 
-The RPC payloads follow Codex's published app-server v2 schemas for [thread listing](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/ThreadListParams.ts), [thread reading](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/ThreadReadParams.ts), and [turn pagination](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/ThreadTurnsListParams.ts). No Paseo source files are copied.
+The RPC payloads follow Codex's published app-server v2 schemas for [thread listing](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/ThreadListParams.ts), [thread reading](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/ThreadReadParams.ts), and [turn pagination](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/schema/typescript/v2/ThreadTurnsListParams.ts).
 
 ## License
 

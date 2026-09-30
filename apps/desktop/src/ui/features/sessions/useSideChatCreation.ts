@@ -1,11 +1,11 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { assistantProviderSupports } from "../../../../../../src/domain/provider-catalog.js";
 import type { AssistantProvider, TranscriptEntry } from "../../../shared/bridge";
-import { bridgeRpc } from "../../bridgeClient";
-import { type SideChatTab, type ThreadView } from "../conversation/session-state";
-import type { ThreadViewStore } from "../conversation/thread-view-store";
-import type { ConversationRuntime } from "../conversation/useConversationRuntime";
-import type { ProviderCatalogs } from "../connection/provider-catalog-state";
+import { bridgeRpc, sendPromptWithDaemonRestartRecovery } from "../../bridgeClient";
+import type { SideChatTab, ThreadView } from "../../shared/conversation-view";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 
@@ -19,8 +19,8 @@ export type SideChatCreationOptions = {
     openingThread: boolean;
   };
   refs: {
-    threadViews: ThreadViewStore;
-    runtime: ConversationRuntime;
+    threadViews: ThreadViewStorePort;
+    runtime: ConversationRuntimePort;
   };
   setters: {
     setProviderCatalogs: StateSetter<ProviderCatalogs>;
@@ -119,12 +119,13 @@ export function useSideChatCreation({ state, refs, setters, actions }: SideChatC
         setters.setBusySince(startedAt);
         setters.setNotice("");
         try {
-          const started = await bridgeRpc.request.sendPrompt({
+          const promptRequest = {
             target: state.connectedTarget,
             threadId: result.threadId,
             text,
             provider: state.threadProvider,
-          });
+          };
+          const started = await sendPromptWithDaemonRestartRecovery(promptRequest);
           if (started.turnId) {
             refs.runtime.setTurnId(state.connectedTarget, state.threadProvider, result.threadId, started.turnId);
             if (refs.runtime.isThreadSelected(state.connectedTarget, state.threadProvider, result.threadId)) {
@@ -135,7 +136,9 @@ export function useSideChatCreation({ state, refs, setters, actions }: SideChatC
           const stillSelected = refs.runtime.isThreadSelected(state.connectedTarget, state.threadProvider, result.threadId);
           if (!refs.runtime.hasObservedTurnStart(state.connectedTarget, state.threadProvider, result.threadId)) {
             refs.runtime.clearTurnTracking(state.connectedTarget, state.threadProvider, result.threadId);
+            refs.runtime.saveDraft(state.connectedTarget, state.threadProvider, result.threadId, text);
             if (stillSelected) {
+              setters.setDraft(text);
               setters.setBusy(false);
               setters.setActiveTurnId("");
               setters.setBusySince(null);

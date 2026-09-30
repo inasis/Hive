@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { LOCAL_WORKSPACE_TARGET } from "../../../domain/workspace.js";
 import { assertSshTarget } from "../../transport/workspace-target.js";
 import { parseHiveRelayTarget } from "../../transport/relay-target.js";
+import { kiroA2ASshForwardArgs } from "./a2a-mcp-server.js";
 
 const execFile = promisify(execFileCallback);
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -42,7 +43,7 @@ export async function spawnKiroAcp(target: string): Promise<{ child: ChildProces
   }
   assertSshTarget(target);
   const remoteCommand = `bash -lc ${shellQuote('PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$HOME/.bun/bin:/usr/local/bin:/usr/bin:/bin"; export PATH; exec kiro-cli acp')}`;
-  const child = spawn("ssh", ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "--", target, remoteCommand], { stdio: "pipe" });
+  const child = spawn("ssh", ["-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", ...kiroA2ASshForwardArgs(target), "--", target, remoteCommand], { stdio: "pipe" });
   return { child, label: `Kiro CLI on ${target}` };
 }
 

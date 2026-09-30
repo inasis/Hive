@@ -1,8 +1,9 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { AssistantProvider, RemoteCommand, RemoteMode, RemoteSkill, TranscriptEntry } from "../../../shared/bridge";
-import type { LocalImageAttachment, ThreadView } from "./session-state";
-import type { ThreadViewStore } from "./thread-view-store";
-import type { ConversationRuntime } from "./useConversationRuntime";
+import type { LocalImageAttachment, ThreadView } from "../../shared/conversation-view";
+import type { ThreadViewStorePort } from "../../shared/conversation-store";
+import { hiveTranscriptCache } from "../../shared/hive-transcript-cache";
+import type { ConversationRuntimePort } from "../../shared/conversation-store";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;
 export type ThreadViewLifecycleOptions = {
@@ -25,8 +26,8 @@ export type ThreadViewLifecycleOptions = {
     skillWarnings: string[];
   };
   refs: {
-    threadViews: ThreadViewStore;
-    runtime: ConversationRuntime;
+    threadViews: ThreadViewStorePort;
+    runtime: ConversationRuntimePort;
   };
   setters: {
     setWorkspaceFileOpenRequest(value: null): void;
@@ -96,6 +97,7 @@ export function useThreadViewLifecycle({ state, refs, setters, actions }: Thread
     setters.setWorkspaceFileOpenRequest(null);
     refs.threadViews.set(view);
     refs.runtime.setActiveThread(view.target, view.provider, view.threadId);
+    reconcileThreadActivity(view, refs.runtime);
     setters.setConnectedTarget(view.target);
     setters.setConnectedProvider(view.provider);
     setters.setActiveThreadProvider(view.provider);
@@ -130,6 +132,7 @@ export function useThreadViewLifecycle({ state, refs, setters, actions }: Thread
 
   const removeThreadView = (target: string, provider: AssistantProvider, threadId: string): void => {
     refs.threadViews.delete(target, provider, threadId);
+    void hiveTranscriptCache.delete(target, provider, threadId);
     refs.runtime.clearThread(target, provider, threadId);
     actions.clearThreadDeltas(target, provider, threadId);
   };
@@ -170,4 +173,41 @@ export function useThreadViewLifecycle({ state, refs, setters, actions }: Thread
   };
 
   return { cacheActiveThreadView, activateThreadView, removeThreadView, updateThreadTitle, clearDeletedActiveThread };
+}
+
+function reconcileThreadActivity(view: ThreadView, runtime: ConversationRuntimePort): void {
+  const latestUserIndex = lastIndex(view.entries, (entry) => entry.role === "user");
+  const latestAssistantIndex = lastIndex(view.entries, (entry) => entry.role === "assistant");
+  const activeEntry = [...view.entries].reverse().find((entry, reverseIndex) => {
+    const index = view.entries.length - reverseIndex - 1;
+    if (index < latestUserIndex) return false;
+    if (entry.role === "assistant") return entry.responseCompleted === false || isRunningStatus(entry.status);
+    return entry.role === "tool" && isRunningStatus(entry.status);
+  });
+  const lastEntryIndex = view.entries.length - 1;
+  const hasUnansweredUser = latestUserIndex >= 0 && latestUserIndex > latestAssistantIndex && latestUserIndex === lastEntryIndex;
+  const isRunning = Boolean(activeEntry) || hasUnansweredUser;
+  const key = [view.target, view.provider, view.threadId] as const;
+
+  if (!isRunning) {
+    runtime.clearTurnTracking(...key);
+    return;
+  }
+
+  runtime.startThread(...key, runtime.runningSince(...key) ?? Date.now());
+  const latestUserTurnId = [...view.entries].reverse().find((entry) => entry.role === "user" && entry.turnId)?.turnId;
+  const turnId = activeEntry?.turnId ?? latestUserTurnId ?? runtime.turnId(...key);
+  if (turnId) runtime.setTurnId(...key, turnId);
+  else runtime.clearTurnId(...key);
+}
+
+function lastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index]!)) return index;
+  }
+  return -1;
+}
+
+function isRunningStatus(status: string | undefined): boolean {
+  return status === "inProgress" || status === "in_progress" || status === "running" || status === "started" || status === "pending";
 }

@@ -7,17 +7,19 @@ export type MobileDaemonSocketEvents = {
   message(data: string): void;
   error(message: string): void;
   close(code: number, reason: string): void;
+  resume(): void;
 };
 
 type HiveTransportPlugin = {
-  connect(options: { url: string; fingerprint: string }): Promise<void>;
-  send(options: { data: string }): Promise<void>;
-  disconnect(): Promise<void>;
+  connect(options: { url: string; fingerprint: string; connectionId: string }): Promise<void>;
+  send(options: { data: string; connectionId: string }): Promise<void>;
+  disconnect(options?: { connectionId?: string }): Promise<void>;
   setKeepAlive(options: { enabled: boolean }): Promise<void>;
   setStatusBarAppearance(options: { light: boolean }): Promise<void>;
-  addListener(event: "message", listener: (event: { data: string }) => void): Promise<PluginListenerHandle>;
-  addListener(event: "error", listener: (event: { message: string }) => void): Promise<PluginListenerHandle>;
-  addListener(event: "close", listener: (event: { code: number; reason: string }) => void): Promise<PluginListenerHandle>;
+  addListener(event: "message", listener: (event: { connectionId: string; data: string }) => void): Promise<PluginListenerHandle>;
+  addListener(event: "error", listener: (event: { connectionId: string; message: string }) => void): Promise<PluginListenerHandle>;
+  addListener(event: "close", listener: (event: { connectionId: string; code: number; reason: string }) => void): Promise<PluginListenerHandle>;
+  addListener(event: "resume", listener: () => void): Promise<PluginListenerHandle>;
 };
 
 const hiveTransport = registerPlugin<HiveTransportPlugin>("HiveTransport");
@@ -28,6 +30,8 @@ export class MobileDaemonSocket {
   private sendOperation: ((data: string) => void | Promise<void>) | undefined;
   private closeOperation: (() => void) | undefined;
   private nativeListenerHandles: PluginListenerHandle[] = [];
+  private generation = 0;
+  private nativeConnectionId: string | undefined;
 
   constructor(private readonly android: boolean) {}
 
@@ -40,8 +44,9 @@ export class MobileDaemonSocket {
   }
 
   async connect(credentials: MobileBridgeCredentials, events: MobileDaemonSocketEvents): Promise<void> {
-    if (this.android) return this.connectAndroid(credentials, events);
-    return this.connectBrowser(credentials.endpoint, events);
+    const generation = ++this.generation;
+    if (this.android) return this.connectAndroid(credentials, events, generation);
+    return this.connectBrowser(credentials.endpoint, events, generation);
   }
 
   send(data: string): void | Promise<void> {
@@ -58,34 +63,51 @@ export class MobileDaemonSocket {
   }
 
   disconnect(): void {
-    if (this.android) void hiveTransport.disconnect();
-    else this.close();
+    this.reset();
   }
 
   reset(): void {
+    this.generation += 1;
     const socket = this.socket;
     this.socket = undefined;
     if (socket && socket.readyState < WebSocket.CLOSING) socket.close();
     this.sendOperation = undefined;
+    const closeOperation = this.closeOperation;
     this.closeOperation = undefined;
+    this.nativeConnectionId = undefined;
+    closeOperation?.();
     for (const handle of this.nativeListenerHandles) void handle.remove();
     this.nativeListenerHandles = [];
   }
 
-  private async connectAndroid(credentials: MobileBridgeCredentials, events: MobileDaemonSocketEvents): Promise<void> {
+  private async connectAndroid(credentials: MobileBridgeCredentials, events: MobileDaemonSocketEvents, generation: number): Promise<void> {
     await hiveTransport.disconnect();
+    if (!this.isCurrent(generation)) return;
+    const connectionId = `hive-${generation}-${Date.now()}`;
+    this.nativeConnectionId = connectionId;
     this.nativeListenerHandles = await Promise.all([
-      hiveTransport.addListener("message", ({ data }) => events.message(data)),
-      hiveTransport.addListener("error", ({ message }) => events.error(message)),
-      hiveTransport.addListener("close", ({ code, reason }) => events.close(code, reason)),
+      hiveTransport.addListener("message", ({ connectionId: eventConnectionId, data }) => {
+        if (this.isCurrent(generation) && eventConnectionId === connectionId) events.message(data);
+      }),
+      hiveTransport.addListener("error", ({ connectionId: eventConnectionId, message }) => {
+        if (this.isCurrent(generation) && eventConnectionId === connectionId) events.error(message);
+      }),
+      hiveTransport.addListener("close", ({ connectionId: eventConnectionId, code, reason }) => {
+        if (this.isCurrent(generation) && eventConnectionId === connectionId) events.close(code, reason);
+      }),
+      hiveTransport.addListener("resume", () => {
+        if (this.isCurrent(generation)) events.resume();
+      }),
     ]);
-    this.closeOperation = () => { void hiveTransport.disconnect(); };
-    await hiveTransport.connect({ url: credentials.endpoint, fingerprint: credentials.fingerprint });
-    this.sendOperation = (data) => hiveTransport.send({ data });
+    if (!this.isCurrent(generation)) return;
+    this.closeOperation = () => { void hiveTransport.disconnect({ connectionId }); };
+    await hiveTransport.connect({ url: credentials.endpoint, fingerprint: credentials.fingerprint, connectionId });
+    if (!this.isCurrent(generation) || this.nativeConnectionId !== connectionId) return;
+    this.sendOperation = (data) => hiveTransport.send({ data, connectionId });
     events.open();
   }
 
-  private connectBrowser(endpoint: string, events: MobileDaemonSocketEvents): Promise<void> {
+  private connectBrowser(endpoint: string, events: MobileDaemonSocketEvents, generation: number): Promise<void> {
     return new Promise((resolve, reject) => {
       let opened = false;
       const socket = new WebSocket(endpoint);
@@ -96,17 +118,22 @@ export class MobileDaemonSocket {
       };
       this.closeOperation = () => { if (socket.readyState < WebSocket.CLOSING) socket.close(); };
       socket.onopen = () => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         opened = true;
         events.open();
         resolve();
       };
-      socket.onmessage = (message) => { if (typeof message.data === "string") events.message(message.data); };
+      socket.onmessage = (message) => {
+        if (this.isCurrent(generation) && this.socket === socket && typeof message.data === "string") events.message(message.data);
+      };
       socket.onerror = () => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         const message = "Hive 데몬 연결 오류입니다. 주소와 네트워크를 확인하세요.";
         events.error(message);
         if (!opened) reject(new Error(message));
       };
       socket.onclose = (event) => {
+        if (!this.isCurrent(generation) || this.socket !== socket) return;
         events.close(event.code, event.reason);
         if (!opened) {
           const message = event.code === 1008 ? "페어링 토큰을 확인하세요." : event.reason || "Hive 데몬 연결이 종료되었습니다.";
@@ -114,5 +141,9 @@ export class MobileDaemonSocket {
         }
       };
     });
+  }
+
+  private isCurrent(generation: number): boolean {
+    return this.generation === generation;
   }
 }

@@ -2,7 +2,7 @@ import type { AssistantThread } from "../../../domain/assistant.js";
 import type { AssistantEventPublisher } from "../../../application/ports/events.js";
 import type { ProviderCatalogPort, ProviderConnectionCatalog } from "../../../application/ports/provider-catalog.js";
 import type { ProviderSessionPort } from "../../../application/ports/provider-sessions.js";
-import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
+import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadOptions, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
 import type { ProviderForkPort, ProviderForkThreadInput, ProviderForkThreadResult, ProviderSideConversationResult } from "../../../application/ports/provider-forks.js";
 import type { ProviderSkillsPort, ProviderSkillCatalog } from "../../../application/ports/provider-skills.js";
 import type { ProviderCommandsPort, ProviderCommandCatalog, ProviderCommandResult } from "../../../application/ports/provider-commands.js";
@@ -51,8 +51,8 @@ export class KiroSessionManager implements ProviderCatalogPort, ProviderSessionP
     return this.catalogAdapter.createThread(target, input);
   }
 
-  openThread(target: string, threadId: string): Promise<ProviderOpenThreadResult> {
-    return this.catalogAdapter.openThread(target, threadId);
+  openThread(target: string, threadId: string, options?: ProviderOpenThreadOptions): Promise<ProviderOpenThreadResult> {
+    return this.catalogAdapter.openThread(target, threadId, options);
   }
 
   forkSideThread(target: string, threadId: string): Promise<ProviderSideConversationResult> {
@@ -73,6 +73,10 @@ export class KiroSessionManager implements ProviderCatalogPort, ProviderSessionP
 
   runCommand(target: string, threadId: string, command: string, argumentsText: string): Promise<ProviderCommandResult> {
     return this.commandAdapter.runCommand(target, threadId, command, argumentsText);
+  }
+
+  assertPromptReady(target: string, threadId: string): Promise<void> {
+    return this.turnAdapter.assertPromptReady(target, threadId);
   }
 
   sendPrompt(target: string, threadId: string, input: ProviderPromptInput): Promise<ProviderPromptResult> {

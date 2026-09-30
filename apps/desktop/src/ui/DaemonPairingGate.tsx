@@ -1,12 +1,13 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { connectDaemonBridge, disconnectDaemonBridge, isWindowsDesktop, preferences } from "./bridgeClient";
+import { connectDaemonBridge, disconnectDaemonBridge, preferences } from "./bridgeClient";
 import { PREFERENCE_KEYS } from "../shared/preferences";
 import { WindowsWindowControls } from "./features/window/WindowsWindowControls";
 
 type SavedPairing = { endpoint: string; token: string; fingerprint: string };
 
-export function DaemonPairingGate({ children, onUseDirectConnection }: {
+export function DaemonPairingGate({ children, isWindowsDesktop, onUseDirectConnection }: {
   children: (changePairing: () => void) => ReactNode;
+  isWindowsDesktop: boolean;
   onUseDirectConnection?: () => void;
 }) {
   const saved = readSavedPairing();

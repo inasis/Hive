@@ -1,6 +1,6 @@
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
 import type { ApprovalDecision, ProviderApprovalResult, ProviderApprovalsPorts } from "../ports/provider-approvals.js";
-import { requireProviderCapability } from "./provider-capability.js";
+import { requireProviderCapability } from "../policies/provider-capability.js";
 
 /** Provider-neutral selection and dispatch for approval responses. */
 export class ProviderApprovalUseCases<Provider extends AssistantProvider = AssistantProvider> {

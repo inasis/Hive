@@ -1,14 +1,27 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { LOCAL_WORKSPACE_TARGET, type AssistantProvider, type RemoteThread } from "../../../shared/bridge";
-import { addUiBridgeEventListener, bridgeRpc, isDaemonClient, isMobileApp, removeUiBridgeEventListener } from "../../bridgeClient";
+import {
+  addUiBridgeEventListener,
+  bridgeRpc,
+  isDaemonClient,
+  isMobileApp,
+  markDaemonProviderRestoreFailed,
+  markDaemonProviderRestored,
+  removeUiBridgeEventListener,
+} from "../../bridgeClient";
 import { providerDisplayName } from "../../shared/provider-display-name";
 import type { UiBridgeEvent } from "../../shared/bridge-event-adapter";
-import { replaceProviderThreads } from "../conversation/session-state";
-import type { BridgeConnectionState } from "./connection-state";
-import type { ProviderCatalogs } from "./provider-catalog-state";
+import { replaceProviderThreads } from "../../shared/provider-thread-state";
+import type { BridgeConnectionState } from "../../shared/provider-ui-state";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
 
 export function useTransportLifecycleEvents(dependencies: {
   provider: AssistantProvider;
+  activeThread: {
+    target: string;
+    thread: RemoteThread | null;
+    sideChatId: string;
+  };
   setters: {
     setConnectionState: Dispatch<SetStateAction<BridgeConnectionState>>;
     setNotice: Dispatch<SetStateAction<string>>;
@@ -16,17 +29,25 @@ export function useTransportLifecycleEvents(dependencies: {
     setConnectedTarget: Dispatch<SetStateAction<string>>;
     setThreads: Dispatch<SetStateAction<RemoteThread[]>>;
     setProviderCatalogs: Dispatch<SetStateAction<ProviderCatalogs>>;
-    setActivePage: Dispatch<SetStateAction<"sessions" | "skills" | "settings">>;
+    setActivePage: Dispatch<SetStateAction<"sessions" | "settings">>;
     setConnectedProvider: Dispatch<SetStateAction<AssistantProvider>>;
   };
   loadAdditionalProviderThreads(target: string, provider: AssistantProvider): void;
+  restoreThread(thread: RemoteThread, sideChatId: string): Promise<void>;
 }) {
   const { provider, setters } = dependencies;
   const loadAdditionalProviderThreads = useRef(dependencies.loadAdditionalProviderThreads);
+  const activeThread = useRef(dependencies.activeThread);
+  const restoreThread = useRef(dependencies.restoreThread);
 
   useEffect(() => {
     loadAdditionalProviderThreads.current = dependencies.loadAdditionalProviderThreads;
   }, [dependencies.loadAdditionalProviderThreads]);
+
+  useEffect(() => {
+    activeThread.current = dependencies.activeThread;
+    restoreThread.current = dependencies.restoreThread;
+  }, [dependencies.activeThread, dependencies.restoreThread]);
 
   useEffect(() => {
     const onEvent = (event: UiBridgeEvent) => {
@@ -53,7 +74,7 @@ export function useTransportLifecycleEvents(dependencies: {
       setters.setConnectionState("connecting");
       setters.setNotice("데몬 연결이 복구되었습니다. 세션 목록을 불러오는 중…");
       void bridgeRpc.request.connect({ target: LOCAL_WORKSPACE_TARGET, provider })
-        .then((result) => {
+        .then(async (result) => {
           setters.setTarget(LOCAL_WORKSPACE_TARGET);
           setters.setConnectedTarget(LOCAL_WORKSPACE_TARGET);
           setters.setThreads((current) => replaceProviderThreads(current, result.threads, provider));
@@ -61,10 +82,19 @@ export function useTransportLifecycleEvents(dependencies: {
           setters.setConnectionState("connected");
           setters.setActivePage("sessions");
           setters.setConnectedProvider(provider);
-          setters.setNotice(`데몬 연결이 복구되었습니다 · ${providerDisplayName(provider)} 세션 ${result.threads.length}개`);
           loadAdditionalProviderThreads.current(LOCAL_WORKSPACE_TARGET, provider);
+          const selected = activeThread.current;
+          const selectedThread = selected.thread;
+          if (selectedThread && selected.target === LOCAL_WORKSPACE_TARGET && selectedThread.provider === provider) {
+            const thread = result.threads.find((candidate) => candidate.id === selectedThread.id && candidate.provider === provider) ?? selectedThread;
+            await restoreThread.current(thread, selected.sideChatId);
+          } else {
+            setters.setNotice(`데몬 연결이 복구되었습니다 · ${providerDisplayName(provider)} 세션 ${result.threads.length}개`);
+          }
+          markDaemonProviderRestored(LOCAL_WORKSPACE_TARGET, provider);
         })
         .catch((error: unknown) => {
+          markDaemonProviderRestoreFailed(LOCAL_WORKSPACE_TARGET, provider, errorMessage(error));
           setters.setConnectionState("disconnected");
           setters.setNotice(`데몬에는 다시 연결했지만 ${providerDisplayName(provider)} 세션을 불러오지 못했습니다: ${errorMessage(error)}`);
         });

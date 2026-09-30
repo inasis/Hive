@@ -1,20 +1,11 @@
 import { useRef, type ComponentProps, type ReactNode, type RefObject } from "react";
-import { FilesPanel } from "./WorkspacePanels";
+import { FilesPanel } from "./FilesPanel";
 import { Icon } from "../../shared/Icon";
 import { useSpringUiMotion } from "../../useSpringUiMotion";
-import type { useWindowControls } from "../window/useWindowControls";
+import type { WindowChrome } from "../../shared/window-chrome";
+import { WINDOW_RESIZE_EDGES, type WindowResizeControls } from "../../shared/window-resize";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
-import type { AppPage, SettingsSection } from "./workspace-types";
-
-type WindowChrome = Pick<ReturnType<typeof useWindowControls>,
-  | "gtkSettings"
-  | "gtkTopbarStyle"
-  | "gtkControlStyle"
-  | "topbarGtkLeftDecorations"
-  | "topbarGtkRightDecorations"
-  | "renderGtkDecorations"
-  | "renderWindowsControls"
->;
+import type { AppPage, SettingsSection } from "../../shared/workspace-state";
 
 type SidebarProps = ComponentProps<typeof WorkspaceSidebar>;
 
@@ -41,6 +32,7 @@ type WorkspaceFrameProps = {
     layout: Omit<SidebarProps["layout"], "sidebarA11yHidden">;
   };
   windowChrome: WindowChrome;
+  windowResize: WindowResizeControls;
   filesPanel: {
     ref: RefObject<HTMLElement | null>;
     panel: ComponentProps<typeof FilesPanel>;
@@ -49,15 +41,15 @@ type WorkspaceFrameProps = {
   overlays: ReactNode;
 };
 
-export function WorkspaceFrame({ layout, actions, sidebar, windowChrome, filesPanel, children, overlays }: WorkspaceFrameProps) {
+export function WorkspaceFrame({ layout, actions, sidebar, windowChrome, windowResize, filesPanel, children, overlays }: WorkspaceFrameProps) {
   const appShellRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
   const sidebarA11yHidden = (layout.desktopSidebarCollapsed && (!layout.isMobileApp || layout.isWideLayout)) || (layout.isMobileApp && !layout.isWideLayout && !layout.mobileSidebarOpen);
   const narrowMobileDrawerOpen = layout.isMobileApp && !layout.isWideLayout && (layout.mobileSidebarOpen || (layout.activePage === "sessions" && layout.filePanelOpen));
   const settingsPageClass = layout.activePage === "settings" ? `settings-section-${layout.settingsSection}` : "";
   const sidebarToggleLabel = layout.isMobileApp && !layout.isWideLayout
-    ? layout.mobileSidebarOpen ? "워크스페이스 닫기" : "워크스페이스 열기"
-    : layout.desktopSidebarCollapsed ? "워크스페이스 펼치기" : "워크스페이스 접기";
+    ? layout.mobileSidebarOpen ? "작업 공간 닫기" : "작업 공간 열기"
+    : layout.desktopSidebarCollapsed ? "작업 공간 펼치기" : "작업 공간 접기";
 
   useSpringUiMotion({
     rootRef: appShellRef,
@@ -74,7 +66,10 @@ export function WorkspaceFrame({ layout, actions, sidebar, windowChrome, filesPa
 
   return <div ref={appShellRef} className={`app-shell page-${layout.activePage} ${settingsPageClass} ${layout.isMobileApp ? "mobile-app" : ""} ${layout.isLinuxDesktop ? "linux-desktop" : ""} ${layout.isWindowsDesktop ? "windows-desktop" : ""} ${layout.desktopSidebarCollapsed ? "desktop-sidebar-collapsed" : ""}`}>
     {layout.isMobileApp && !layout.isWideLayout && <button className={`mobile-drawer-backdrop ${narrowMobileDrawerOpen ? "is-open" : ""}`} onClick={actions.dismissMobilePanels} aria-label="패널 닫기" aria-hidden={!narrowMobileDrawerOpen} inert={!narrowMobileDrawerOpen} />}
-    <WorkspaceSidebar {...sidebar} asideRef={sidebarRef} layout={{ ...sidebar.layout, sidebarA11yHidden }} />
+    <WorkspaceSidebar {...sidebar} asideRef={sidebarRef} layout={{
+      ...sidebar.layout,
+      sidebarA11yHidden,
+    }} />
 
     <main className="main-column">
       <header className="topbar electrobun-webkit-app-region-drag" style={windowChrome.gtkTopbarStyle} data-gtk-theme={windowChrome.gtkSettings?.gtk.theme} data-gtk-icon-theme={windowChrome.gtkSettings?.gtk.iconTheme}>
@@ -84,7 +79,7 @@ export function WorkspaceFrame({ layout, actions, sidebar, windowChrome, filesPa
           </div>}
           <div className="breadcrumbs">
             <button className="desktop-sidebar-toggle-button electrobun-webkit-app-region-no-drag" type="button" onClick={actions.toggleSidebar} aria-label={sidebarToggleLabel} aria-controls="workspace-sidebar" aria-expanded={layout.isMobileApp && !layout.isWideLayout ? layout.mobileSidebarOpen : !layout.desktopSidebarCollapsed} title={sidebarToggleLabel}><Icon name="panel-left" /></button>
-            <b>{layout.activePage === "sessions" ? layout.activeTitle || "세션" : layout.activePage === "skills" ? "스킬" : layout.activePage === "settings" ? layout.settingsSection === "connection" ? "연결" : "테마" : ""}</b>
+            <b>{layout.activePage === "sessions" ? layout.activeTitle || "작업 공간" : settingsSectionTitle(layout.settingsSection)}</b>
           </div>
         </div>
         <div className="topbar-actions electrobun-webkit-app-region-no-drag">
@@ -101,6 +96,25 @@ export function WorkspaceFrame({ layout, actions, sidebar, windowChrome, filesPa
     {layout.activePage === "sessions" && layout.filePanelInitialized && <aside ref={filesPanel.ref} className={`files-side-panel ${layout.filePanelOpen ? "" : "file-panel-closed"}`} aria-label="파일 패널" aria-hidden={!layout.filePanelOpen} inert={!layout.filePanelOpen}>
       <FilesPanel {...filesPanel.panel} />
     </aside>}
+    {!layout.isMobileApp && <div className="window-resize-grips" aria-hidden="true" hidden={windowResize.maximized || windowResize.overlayOpen}>
+      {WINDOW_RESIZE_EDGES.map((edge) => <div
+        key={edge}
+        className={`window-resize-grip resize-${edge}`}
+        onPointerDown={(event) => void windowResize.begin(event, edge)}
+        onPointerMove={windowResize.move}
+        onPointerUp={windowResize.end}
+        onPointerCancel={windowResize.end}
+      />)}
+    </div>}
     {overlays}
   </div>;
+}
+
+function settingsSectionTitle(section: SettingsSection): string {
+  switch (section) {
+    case "connection": return "연결";
+    case "skills": return "스킬";
+    case "mcp": return "MCP";
+    case "theme": return "테마";
+  }
 }

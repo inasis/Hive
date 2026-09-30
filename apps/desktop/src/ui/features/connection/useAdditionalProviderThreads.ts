@@ -1,8 +1,8 @@
 import { useCallback, type Dispatch, type SetStateAction } from "react";
 import { ASSISTANT_PROVIDERS } from "../../../../../../src/domain/provider-catalog.js";
 import type { AssistantProvider, RemoteThread } from "../../../shared/bridge";
-import { replaceProviderThreads } from "../conversation/session-state";
-import type { ProviderCatalogs } from "./provider-catalog-state";
+import { replaceProviderThreads } from "../../shared/provider-thread-state";
+import type { ProviderCatalogs } from "../../shared/provider-ui-state";
 import { bridgeRpc } from "../../bridgeClient";
 
 type StateSetter<T> = Dispatch<SetStateAction<T>>;

@@ -1,13 +1,14 @@
-import { useEffect, useRef, type ComponentProps, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Fragment, useMemo, useRef, type ComponentProps, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
 import { createPortal } from "react-dom";
-import { FileDocument, TerminalPanel } from "../workspace/WorkspacePanels";
+import { FileDocument } from "../../shared/FileDocument";
 import { Icon } from "../../shared/Icon";
-import { basename } from "../workspace/session-groups";
-import type { WorkspaceFileTab, WorkspaceTab } from "../workspace/workspace-types";
+import { basename } from "../../shared/path-name";
+import type { WorkspaceFileTab, WorkspaceTab } from "../../shared/workspace-state";
 import { Composer } from "./Composer";
 import { ActivityGroup, Transcript } from "./Transcript";
 import { assistantResponseTextForEntry, canForkTranscriptEntry, groupTranscriptEntries } from "./transcript-state";
-import type { SideChatTab } from "./session-state";
+import { useTranscriptWindow } from "./useTranscriptWindow";
+import type { SideChatTab } from "../../shared/conversation-view";
 import type { AssistantProvider, TranscriptEntry } from "../../../shared/bridge";
 
 type Props = {
@@ -48,6 +49,7 @@ type Props = {
     creatingSession: boolean;
     notice: string;
   };
+  terminalPanel: ReactNode;
   actions: {
     setActiveTab: Dispatch<SetStateAction<WorkspaceTab>>;
     switchChatTab: (threadId: string, sideChatId?: string) => void;
@@ -65,13 +67,22 @@ type Props = {
   };
 };
 
-export function ConversationWorkspace({ thread, tabs, composer, emptyState, actions }: Props) {
+export function ConversationWorkspace({ thread, tabs, composer, emptyState, terminalPanel, actions }: Props) {
   const conversationRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const scroll = conversationRef.current;
-    if (scroll) scroll.scrollTop = scroll.scrollHeight;
-  }, [thread.entries, thread.busy]);
+  const threadKey = `${thread.target}\u0000${thread.provider}\u0000${thread.id}`;
+  const { visibleGroups, hasOlder, historySentinelRef, onScroll, showJumpToLatest, jumpToLatest } = useTranscriptWindow(
+    threadKey,
+    thread.target,
+    thread.provider,
+    thread.id,
+    tabs.active === "chat",
+    thread.entries,
+    conversationRef,
+  );
+  const responseGroups = useMemo(() => visibleGroups.map((group) => ({
+    ...group,
+    blocks: groupTranscriptEntries(group.entries),
+  })), [visibleGroups]);
 
   return <>
     <div className="content-row">
@@ -103,38 +114,48 @@ export function ConversationWorkspace({ thread, tabs, composer, emptyState, acti
           <button ref={tabs.createButtonRef} className="side-chat-add" type="button" aria-label="탭 추가" aria-expanded={tabs.createMenuOpen} title="탭 추가" onClick={(event) => actions.toggleCreateMenu(event.currentTarget)}><Icon name="plus" /></button>
         </div>
         {tabs.active === "chat" && thread.id && <>
-          <div className="conversation-scroll" ref={conversationRef}><div className="conversation-inner">
-            <div className="conversation-date"><span />{thread.targetLabel} · {thread.id.slice(0, 8)}<span /></div>
-            {thread.opening && <div className="inline-state">원격 대화 기록을 가져오는 중…</div>}
-            {!thread.opening && !thread.entries.length && <div className="empty-conversation"><div className="empty-icon"><Icon name="message" /></div><h2>대화 기록이 없습니다</h2><p>메시지를 보내면 {thread.providerName}가 이 세션을 이어갑니다.</p></div>}
-            {groupTranscriptEntries(thread.entries).map((block) => {
-              if (block.kind === "activity") return <ActivityGroup key={block.id} entries={block.entries} />;
-              const copyText = assistantResponseTextForEntry(block.entry, thread.entries, !thread.unfinishedResponse);
-              const canFork = canForkTranscriptEntry(block.entry, copyText !== undefined);
-              return <Transcript
-                key={block.entry.id}
-                entry={block.entry}
-                cwd={thread.cwd}
-                onOpenFile={actions.openFile}
-                copyText={copyText}
-                onFork={canFork ? () => actions.forkResponse(block.entry) : undefined}
-                forking={thread.forkingEntryId === block.entry.id}
-              />;
-            })}
-            {thread.busy && <div className="working-indicator"><span /><span /><span /> {thread.providerName}가 응답 중입니다 · {formatElapsed(thread.busyElapsed)}</div>}
-          </div></div>
+          <div className="conversation-scroll-frame">
+            <div className="conversation-scroll" ref={conversationRef} onScroll={onScroll}>
+              <div className="conversation-inner">
+                <div className="conversation-date"><span />{thread.targetLabel} · {thread.id.slice(0, 8)}<span /></div>
+                {thread.opening && <div className="inline-state">원격 대화 기록을 가져오는 중…</div>}
+                {!thread.opening && !thread.entries.length && <div className="empty-conversation"><div className="empty-icon"><Icon name="message" /></div><h2>대화 기록이 없습니다</h2><p>메시지를 보내면 {thread.providerName}가 이 세션을 이어갑니다.</p></div>}
+                {responseGroups.map((group, groupIndex) => <Fragment key={group.id}>
+                  {hasOlder && groupIndex === 10 && <div ref={historySentinelRef} className="transcript-history-sentinel" aria-hidden="true" />}
+                  {group.blocks.map((block) => {
+                    if (block.kind === "activity") return <ActivityGroup key={block.id} entries={block.entries} />;
+                    const threadIdle = groupIndex < responseGroups.length - 1 || !thread.unfinishedResponse;
+                    const copyText = assistantResponseTextForEntry(block.entry, group.entries, threadIdle);
+                    const canFork = canForkTranscriptEntry(block.entry, copyText !== undefined);
+                    return <Transcript
+                      key={block.entry.id}
+                      entry={block.entry}
+                      cwd={thread.cwd}
+                      onOpenFile={actions.openFile}
+                      copyText={copyText}
+                      responseDurationMs={block.entry.responseDurationMs}
+                      onFork={canFork ? () => actions.forkResponse(block.entry) : undefined}
+                      forking={thread.forkingEntryId === block.entry.id}
+                    />;
+                  })}
+                </Fragment>)}
+                {thread.busy && <div className="working-indicator"><span /><span /><span /> 응답을 작성하고 있습니다 · {formatElapsed(thread.busyElapsed)}</div>}
+              </div>
+            </div>
+            {showJumpToLatest && <button className="conversation-jump-latest" type="button" onClick={jumpToLatest} aria-label="최신 대화로 이동" title="최신 대화로 이동"><Icon name="chevron-down" /><span>최신 내역</span></button>}
+          </div>
           <Composer {...composer} />
         </>}
         {tabs.active === "chat" && !thread.id && (
           <div className="empty-state">
             <div className="empty-icon"><Icon name="message" /></div>
             <h2>{emptyState.connectionState === "connected" ? `${emptyState.providerName} 세션을 선택하세요` : `${emptyState.providerName}에 연결하세요`}</h2>
-            <p>{emptyState.connectionState === "connected" ? "왼쪽에서 기존 세션을 선택하거나 현재 워크스페이스에서 새 세션을 만드세요." : `${emptyState.providerName}에 연결하면 세션과 대화를 불러올 수 있습니다.`}</p>
-            {emptyState.connectionState === "connected" ? <button className="dialog-primary" onClick={actions.openNewWorkspace} disabled={emptyState.creatingSession}>새 워크스페이스</button> : <button onClick={actions.openConnectionSettings}>SSH 호스트 연결</button>}
+            <p>{emptyState.connectionState === "connected" ? "왼쪽에서 기존 세션을 선택하거나 현재 작업 공간에서 새 세션을 만드세요." : `${emptyState.providerName}에 연결하면 세션과 대화를 불러올 수 있습니다.`}</p>
+            {emptyState.connectionState === "connected" ? <button className="dialog-primary" onClick={actions.openNewWorkspace} disabled={emptyState.creatingSession}>새 작업 공간</button> : <button onClick={actions.openConnectionSettings}>SSH 호스트 연결</button>}
             {emptyState.notice && <div className="inline-notice" role="status"><Icon name="info" />{emptyState.notice}</div>}
           </div>
         )}
-        {tabs.terminal && <div className="workspace-tab-panel" hidden={tabs.active !== "terminal"}><TerminalPanel target={tabs.terminal.target} cwd={tabs.terminal.cwd} /></div>}
+        {tabs.terminal && <div className="workspace-tab-panel" hidden={tabs.active !== "terminal"}>{terminalPanel}</div>}
         {tabs.activeFile && tabs.active === `file:${tabs.activeFile.id}` && <FileDocument file={tabs.activeFile.file} />}
       </section>
     </div>

@@ -1,7 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createServer } from "node:net";
 import { openCodeAuthorization, probeOpenCodeApi } from "./api.js";
+import { injectHiveA2AMcpServer } from "./a2a-mcp-config.js";
 
-const DEFAULT_ENDPOINT = "http://127.0.0.1:4096";
+const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_PORT = 4096;
 const START_TIMEOUT_MS = 30_000;
 
 export type OpenCodeServerConfig = {
@@ -61,14 +64,20 @@ function getOpenCodePassword(): string | undefined {
 }
 
 async function launchManagedServer(username: string, configuredPassword: string | undefined): Promise<OpenCodeServerConfig> {
-  const endpoint = DEFAULT_ENDPOINT;
+  const port = await selectManagedPort();
+  const endpoint = `http://${DEFAULT_HOST}:${port}`;
   const command = process.env.HIVE_OPENCODE_BIN?.trim() || "opencode";
   const childEnvironment: NodeJS.ProcessEnv = { ...process.env, OPENCODE_SERVER_USERNAME: username };
   if (configuredPassword) childEnvironment.OPENCODE_SERVER_PASSWORD = configuredPassword;
+  const a2aUrl = process.env.HIVE_A2A_MCP_URL?.trim();
+  const a2aToken = process.env.HIVE_A2A_HTTP_TOKEN?.trim();
+  if (a2aUrl && a2aToken && process.env.HIVE_A2A_HTTP_ENABLED?.trim().toLowerCase() !== "false") {
+    injectHiveA2AMcpServer(childEnvironment, a2aUrl, a2aToken);
+  }
 
   let child: ChildProcess;
   try {
-    child = spawn(command, ["serve", "--hostname", "127.0.0.1", "--port", "4096"], {
+    child = spawn(command, ["serve", "--hostname", DEFAULT_HOST, "--port", String(port)], {
       env: childEnvironment,
       stdio: ["ignore", "pipe", "pipe"],
     });
@@ -101,7 +110,7 @@ async function launchManagedServer(username: string, configuredPassword: string 
       if (launchError) throw new Error(`OpenCode CLI를 실행하지 못했습니다: ${launchError.message}`);
       if (child.exitCode !== null || child.signalCode !== null) {
         const status = child.signalCode ? `signal ${child.signalCode}` : `exit code ${child.exitCode}`;
-        throw new Error(`OpenCode CLI가 서버 준비 전에 종료되었습니다 (${status}). CLI 설치와 4096 포트 사용 여부를 확인하세요.`);
+        throw new Error(`OpenCode CLI가 서버 준비 전에 종료되었습니다 (${status}). CLI 설치와 ${endpoint} 포트 사용 여부를 확인하세요.`);
       }
 
       const password = configuredPassword ?? generatedPassword;
@@ -129,6 +138,41 @@ async function launchManagedServer(username: string, configuredPassword: string 
     await terminateChild(child);
     throw error;
   }
+}
+
+async function selectManagedPort(): Promise<number> {
+  if (await isLoopbackPortAvailable(DEFAULT_PORT)) return DEFAULT_PORT;
+  return reserveLoopbackPort();
+}
+
+function isLoopbackPortAvailable(port: number): Promise<boolean> {
+  const probe = createServer();
+  return new Promise((resolve, reject) => {
+    const onError = (): void => resolve(false);
+    probe.once("error", onError);
+    probe.listen(port, DEFAULT_HOST, () => {
+      probe.off("error", onError);
+      probe.close((error) => error ? reject(error) : resolve(true));
+    });
+  });
+}
+
+function reserveLoopbackPort(): Promise<number> {
+  const probe = createServer();
+  return new Promise((resolve, reject) => {
+    const onError = (error: Error): void => reject(error);
+    probe.once("error", onError);
+    probe.listen(0, DEFAULT_HOST, () => {
+      probe.off("error", onError);
+      const address = probe.address();
+      if (!address || typeof address === "string") {
+        probe.close();
+        reject(new Error("Could not reserve an available OpenCode loopback port"));
+        return;
+      }
+      probe.close((error) => error ? reject(error) : resolve(address.port));
+    });
+  });
 }
 
 function parseGeneratedPassword(output: string): string | undefined {

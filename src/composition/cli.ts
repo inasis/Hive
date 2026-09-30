@@ -12,6 +12,7 @@ import { runHiveRelayAgent } from "./relay-agent.js";
 import { runHiveRelayServer } from "./relay-server.js";
 import { resumeCodexThread } from "../interfaces/cli/resume.js";
 import { runCli } from "../interfaces/cli/runner.js";
+import { runA2AMcpStdioProxy } from "../adapters/transport/a2a-mcp-stdio.js";
 
 const codexAdapter = new CodexCliAdapter();
 const archiveAdapter = new CodexArchiveFileAdapter();
@@ -31,6 +32,7 @@ function runCodexResume(target: string, threadId: string): Promise<void> {
 
   return resumeCodexThread(target, threadId, {
     validateTarget: (requestedTarget) => sessions.validateTarget(requestedTarget),
+    validateThreadId: (requestedThreadId) => sessions.validateThreadId(requestedThreadId),
     openSession: (requestedTarget, requestedThreadId) => sessions.openSession(requestedTarget, requestedThreadId),
     buildSkillInput: (requestedTarget, requestedThreadId, selector, request) =>
       sessions.buildSkillInput(requestedTarget, requestedThreadId, selector, request),
@@ -50,6 +52,7 @@ function runCodexResume(target: string, threadId: string): Promise<void> {
 
 /** Assemble and run the standalone CLI process. */
 export function runHiveCli(args: string[]): Promise<void> {
+  if (args[0] === "a2a-mcp" && args[1] === "--stdio" && args.length === 2) return runA2AMcpStdioProxy();
   return runCli(args, {
     defaultArchiveDirectory: () => codexCli.defaultArchiveDirectory(),
     isRelayTarget: (target) => Boolean(parseHiveRelayTarget(target)),

@@ -1,54 +1,32 @@
-# 아키텍처 리팩터링 세션 재개 체크포인트
+# 아키텍처 리팩터링 체크포인트
 
-이 문서는 작업 세션이 중단되거나 goal이 paused/stalled 상태가 된 뒤에도 같은 리팩터링 목표를 이어가기 위한 진행 메모다. 아키텍처 요구사항의 기준은 항상 [`refactoring-goals.ko.md`](./refactoring-goals.ko.md)이며, 이 체크포인트는 그 범위를 줄이거나 대체하지 않는다.
+이 문서는 재개에 필요한 현재 상태와 미검증 범위만 기록한다. 설계 원칙과 완료 기준은 [`refactoring-goals.ko.md`](./refactoring-goals.ko.md), A2A 기능 설명과 상세 한계는 [`a2a-runtime.ko.md`](./a2a-runtime.ko.md)를 따른다.
 
-## 재개 방법
+## 현재 상태 — 2026-09-29
 
-새 세션에서 다음 순서로 이어간다.
+- 계층형 구조가 적용되어 있다. Domain과 Application은 제품 규칙·포트를 소유하고, provider/transport/persistence 구현은 adapters에 둔다. Interfaces는 요청 경계, composition roots는 프로세스별 조립을 맡는다.
+- Desktop UI는 연결, 대화, 세션, 설정, workspace와 창 기능으로 나뉘며 `App.tsx`가 조립한다. 공유 계약은 `ui/shared`에 있고 feature 간 직접 import는 두지 않는다.
+- Codex, OpenCode, Kiro provider와 SSH, WSS, TCP relay, workspace file, terminal adapter를 분리했다. daemon API와 desktop/mobile bridge의 기존 wire shape, CLI 입력 의미, 사용자 저장 형식을 유지한다.
+- npm workspaces는 루트 `package-lock.json` 하나로 desktop과 Android 의존성을 관리한다. 루트 명령이 공유 UI를 빌드한 뒤 Android workspace를 빌드한다. package별 설치 경로와 lockfile은 남아 있지 않다.
+- A2A runtime과 별도 HTTP/SSE 및 MCP 경로가 추가됐다. 비동기 task/callback 진행 상태와 남은 provider runtime 확인은 A2A 문서를 참조한다.
 
-1. 이 문서와 [`refactoring-goals.ko.md`](./refactoring-goals.ko.md)를 읽어 전체 목적, 완료 기준, 남은 검증을 복원한다.
-2. 저장소에서 현재 브랜치, HEAD, `git status`를 확인한다. 아래 스냅샷은 마지막 기록일 뿐이므로 실제 작업 트리가 더 최신이면 실제 상태를 따른다.
-3. 기존 변경을 보존한다. 현재 진행 중인 리팩터링에는 커밋되지 않은 변경이 포함되어 있으므로 상태를 확인하지 않은 `reset`, `checkout`, `clean`, stash 적용/제거를 하지 않는다.
-4. goal이 paused/stalled였더라도 완료나 폐기로 해석하지 않는다. 같은 목표와 남은 범위를 유지하고, 중단 지점의 코드 상태를 확인한 뒤 다음 항목부터 진행한다.
-5. 코드 변경 뒤 목표 문서의 진행 기록을 갱신하고, 해당 단계의 빌드 및 필요한 동작 회귀 확인을 기록한다. 빌드 성공만으로 런타임 호환성이나 전체 goal 완료를 선언하지 않는다.
+## 이번 정리에서 확인한 검증
 
-## 마지막 확인 스냅샷
+- 통과: `npm run build`, `npm run build:app`, `npm run desktop:build`, `npm ci --dry-run --ignore-scripts`, workspace `npm ls`, `git diff --check`.
+- `npm run android:build`는 desktop web build와 Capacitor sync까지 진행했다. Gradle이 Java 25 class version 69를 지원하지 않아 Android build는 중단됐다. 현재 환경에는 CI와 문서에서 사용하는 Java 21이 설치되어 있지 않다.
+- `src`와 desktop source import graph 검사에서 정식 진입점 외의 고아 TypeScript 모듈은 확인되지 않았다. 등록되지 않고 중복 기능을 제공하던 A2A stdio 진입점은 제거했다.
+- A2A 성능 회귀 테스트 `node tests/a2a-performance.test.mjs` 6개 검사가 통과했다. Codex task thread는 ephemeral 시작을 요청하고 응답을 확인해 지속 writer lock 세션으로 대체되지 않게 한다. 등록 thread focus를 유지해 복구용 재오픈 왕복도 생략한다. 임시 provider thread 동작은 mock 기반이며 실제 Codex/OpenCode/Kiro 연결 검증은 아니다.
 
-- 기록일: 2026-09-28 (Asia/Seoul)
-- 브랜치: `refactor/layered-architecture`
-- 마지막 확인 HEAD: `1651906` (`refactor: split daemon and provider boundaries`).
-- 작업 트리: HEAD에 architecture/provider/transport 경계 리팩터링이 반영되어 있다. 현재는 Windows daemon pairing 진입, Windows webview 창 제어 UI와 설명 문서 변경이 미커밋 상태다. 아래 Linux·Android 빌드 결과를 확인했으며 Windows host 산출물과 실제 창 버튼 조작은 아직 확인하지 않았다. 기존 `src/adapters`, `src/application`, `src/composition`, `src/interfaces`, desktop feature/platform 경계를 보존한다.
-- 최근 구조 변경: Kiro ACP session mapping을 event, notification, catalog, command, image-validation 경계로 분리했다. Kiro ACP server request는 approval dispatcher, workspace file 처리, local/SSH PTY lifecycle로 나눴다. Codex JSON-RPC framing/pending request lifecycle과 app-server local/SSH/encrypted relay 연결을 각각 `codex-rpc.ts`, `codex-process-transport.ts`로 나눴다. Relay E2E peer authentication/key exchange는 `relay-e2e-handshake.ts`, AES-GCM records는 `relay-record-stream.ts`로 분리했다. Android daemon RPC request ID, timeout, reply matching, disconnect cleanup은 `apps/desktop/src/platform/mobile-daemon-rpc.ts`가 맡고, 실제 브라우저 WebSocket/Capacitor 연결 및 listener 수명 주기는 `mobile-daemon-socket.ts`, 인증과 reconnect policy는 `mobile-daemon-transport.ts`가 맡는다.
-- 이번 변경: composer 제출·Hive/provider command 라우팅은 `useComposerSubmission`, 실행 중 turn의 steer·중지는 `useConversationTurnControls`, approval 응답은 `useApprovalResponse`로 나눴다. Hive 전용 `/help`, `/quit`, `/side`, `/resume`, `/skills`는 `hive-composer-commands.ts`, provider command catalog 조회·실행은 `provider-composer-commands.ts`로 옮겼다. OpenCode 모델 API 조회와 설정 병합은 `model-catalog.ts`, v1/v2 세션 CRUD API는 `session-api.ts`, model/prompt/command/interrupt 요청은 `turn-api.ts`, 메시지 pagination은 `message-api.ts`, skill·command API는 `resource-api.ts`로 분리했다. `provider.ts`는 직접 HTTP 호출 없이 API adapter를 조립하고 연결·turn watcher 수명 주기를 맡는다. desktop Bun·Android mobile client와 daemon server가 공유하는 WSS packet envelope와 request builder는 `interfaces/contracts/daemon-transport.ts`로 모았다. Assistant application event와 terminal event의 wire 직렬화는 각각 `daemon-assistant-event-serializer.ts`, `daemon-terminal-event-serializer.ts`에 두고 `daemon-events.ts`에는 inbound bridge envelope 파싱과 wire 타입을 남겼다. Desktop Bun과 Android daemon transport의 지수형 reconnect 일정 및 token/certificate 오류 중단 판별은 `adapters/transport/daemon-reconnect-policy.ts`, endpoint·token·fingerprint 정규화는 `adapters/transport/daemon-credentials.ts`를 사용한다. 응답의 영구 fork는 `useResponseFork`, side-chat 생성과 첫 prompt는 `useSideChatCreation`, 열린 대화 탭 탐색은 `useChatTabNavigation`으로 나눴다. `useSessionWorkflows`에서 thread 열기는 `useThreadOpening`, 폴더 선택·새 세션 dialog·provider 세션 생성은 `useSessionCreation`으로 나눴다. GTK titlebar와 native frame resize는 `useWindowControls`·`useWindowResize`로 분리했다. Desktop Bun의 RPC pending lifecycle은 `daemon-rpc.ts`로 옮기고 `daemon-client.ts`에는 WSS/TLS/auth/reconnect lifecycle을 남겼다. CLI에서는 `runner.ts`가 명령 라우팅, `arguments.ts`가 파싱·검증, `output.ts`가 help·목록 포맷을 맡고, `terminal-text.ts`가 제어 시퀀스 제거·한 줄 텍스트 정리·CJK/emoji 표시 폭과 자르기를 맡는다. Renderer bridge의 provider transcript item payload→UI transcript mapping은 `bridge-transcript-adapter.ts`, 공통 값 검증·표시는 `bridge-event-values.ts`, wire event dispatch는 `bridge-event-adapter.ts`가 맡는다. Codex archive 포트의 `threadRead`는 `CodexArchiveJsonValue` 재귀 타입을 사용하며, `codex/archive-mapper.ts`가 app-server 응답을 검증한 뒤 opaque archive로 전달한다. 기존 UI 명령 순서, CLI 인자·출력, RPC payload, 120초 timeout, turn·승인·fork/session hydration과 탭 흐름은 유지했다.
-- 이번 import graph audit: `src`와 `apps/desktop/src`의 222개 TypeScript 소스, 414개 runtime local import/export edge, 830개 전체 static local import/export edge. 순환 0건, 조사한 계층 위반 0건, Domain/Application 외부 패키지 import 0건. 해결되지 않은 상대 경로는 desktop `main.tsx`의 CSS asset import 1건이다.
-- CLI, composer, OpenCode 분리 후 확인: `npm run build` 및 `npm run build:app` 통과. TypeScript AST 계층 검사에서 209개 소스 기준 확인한 Domain/Application 외부 의존 및 Interfaces/UI 상위 계층 의존 위반은 0건이다. Desktop web build는 981.97 kB renderer chunk 경고를 냈으며 통과했다. 별도 OpenCode v2.0.16 서버에서 `ProviderCatalogUseCases` 연결, 더미 모델 1개 조회, `ProviderConversationUseCases` 세션 생성, refresh 결과에서 확인, `ProviderSessionUseCases` 삭제, refresh 결과에서 제거를 확인했다. 임시 XDG 디렉터리와 서버를 정리했다. 화면 실제 조작과 mobile/WSS reconnect 및 Windows runner는 검증하지 않았다.
-- 사용자 복구 후 로컬 서비스 재확인: `opencode service status`가 `http://127.0.0.1:49374`를 반환했고, Hive가 설정된 인증으로 연결해 사용 가능한 모델 1개를 확인했다. 임시 workspace에서 provider use case를 통한 세션 생성, 목록 확인, 삭제, 삭제 후 목록 부재를 모두 확인한 뒤 workspace를 제거했다. 추론 요청은 보내지 않았으며 비밀번호는 출력하지 않았다.
-- OpenCode session/turn API 분리 후 재확인: `npm run build`, `npm run build:app`, `npm run desktop:build`, `npm run android:build` 통과. Linux desktop 산출물은 `apps/desktop/build/stable-linux-x64`, Android debug APK는 `artifacts/android/Hive-android-debug.apk`에 생성됐다. 복구된 로컬 서비스에서 새 adapter를 포함한 빌드로 연결, 모델 조회, 세션 생성·목록 확인·삭제·삭제 후 부재를 확인했다. 임시 workspace를 제거했고 prompt/interrupt 추론은 호출하지 않았다. renderer 500 kB 초과 chunk, GTK deprecated API, Gradle restricted API/flatDir 및 npm install script 경고가 출력됐다.
-- OpenCode message/resource API 분리 후 재확인: 전체 빌드 뒤 복구된 `http://127.0.0.1:49374`에 연결해 모델 조회, 세션 생성, refresh 목록 확인, session open을 통한 메시지 목록 조회, 세션 삭제와 삭제 후 부재를 확인했다. 임시 workspace를 정리했고 prompt 추론은 요청하지 않았다. `provider.ts`에는 직접 HTTP 호출이 남지 않았다.
-- Shared daemon transport contract 분리 후 `npm run build`, `npm run build:app`, `npm run desktop:build`, `npm run android:build`가 통과했다. Desktop Bun과 Android transport가 공통 parser/builder를 사용하고 method별 response 및 bridge event 검증은 기존 계약에 위임한다. 후속 WSS smoke에서 desktop Bun의 인증·response schema·disconnect cleanup·reconnect도 확인했다. import graph에서 순환과 조사한 계층 위반은 0건이며 `git diff --check`를 확인했다.
-- Shared daemon credential/reconnect policy 분리 후 `npm run build`, `npm run build:app`, `npm run desktop:build`, `npm run android:build`가 통과했다. 두 client의 endpoint/token/fingerprint 정규화를 모았고 browser fingerprint 선택 조건은 그대로 뒀다. 기존 1초~30초 지수 backoff 일정을 공통화했으며 pairing token 및 인증서 지문 오류는 한글·영문 메시지에서 재시도를 중단한다. 임시 config의 daemon과 `PinnedDaemonClient`로 올바른 TLS pin 성공, 잘못된 pin 및 token 거부, `listProviders` 응답 검증, 예상치 못한 socket loss에서 pending RPC reject, 서버 재시작 뒤 자동 reconnect와 RPC 성공을 확인했다. 별도 timer-scale smoke는 코드의 120000ms timeout delay를 짧게 낮춰 만료 reject, late response 무시, pending 정리를 확인했다. 실제로 120초를 대기한 것은 아니며 Android 실제 기기 transport도 미검증이다. import graph는 216개 TypeScript 소스, 406개 runtime edge, 818개 static edge이며 cycle/layer violation은 0건이다.
-- Bridge event serializer 분리 후 `npm run build`, `npm run build:app`, `npm run desktop:build`, `npm run android:build`가 통과했다. Assistant delta와 terminal exit의 기존 wire shape 및 inbound `parseBridgeEvent`를 runtime smoke로 확인했다. 산출물은 `apps/desktop/build/stable-linux-x64`와 `artifacts/android/Hive-android-debug.apk`에 생성됐다. renderer chunk 크기, GTK deprecated API, Android Gradle/npm 경고가 있었으며 빌드는 성공했다. Android 실제 기기 transport는 연결된 기기가 없어 미검증이다. import graph는 218개 TypeScript 소스, 407개 runtime edge, 822개 static edge이고 cycle/layer violation은 0건이다.
-- Relay E2E 런타임 확인: 임시 ephemeral TCP relay에서 client/agent token 검증·key exchange와 codex/files/terminal 세 채널의 양방향 record stream(180,321 및 131,117 byte payload)을 확인했다. 잘못된 token은 양쪽에서 거부됐고, 변조 record는 AES-GCM 인증 실패로, 닫힌 중간 record는 truncation 오류로 정리됐다. 이 확인은 relay stream adapter의 protocol compatibility만 다루며 UI/provider 기능 전체를 검증하지 않는다.
-- Provider transport 런타임 재확인: Codex app-server initialize/thread-list/clean shutdown을 local target, localhost SSH, 임시 TCP relay 및 실제 relay host agent 경로로 확인했다. Kiro는 임시 workspace에서 세션을 만든 뒤 ACP 프로세스를 종료하고, 저장된 세션을 다시 열어 삭제했다. Kiro 테스트 세션을 지우고 임시 workspace를 제거했다.
-- 마지막 전체 빌드: `npm run build`, `npm run build:app`, `npm run desktop:build`, `npm run android:build`, `git diff --check`가 relay E2E 분리 뒤 통과했다. Android debug APK는 `artifacts/android/Hive-android-debug.apk`, Linux desktop 결과는 `apps/desktop/build/stable-linux-x64`에 생성됐다. 번들 크기, GTK deprecated API, Gradle restricted API/flatDir 및 npm install script 경고가 남았다. 빌드는 relay 재연결 및 실제 화면 동작을 검증하지 않는다.
-- 최근 UI·Bun transport 분리 후 `npm run build`, `npm run build:app`, `npm run desktop:build`, `npm run android:build`와 `git diff --check`가 통과했다. Linux desktop 결과는 `apps/desktop/build/stable-linux-x64`, Android debug APK는 `artifacts/android/Hive-android-debug.apk`에 생성됐다. renderer 500 kB 초과 chunk, GTK deprecated API, Gradle restricted API/flatDir, npm install script 경고가 계속 출력됐다. Bun RPC 분리 이후 desktop WSS 인증·response·reconnect runtime은 확인하지 않았다. 제품 README와 uncommitted GitHub Actions workflow에는 Windows x64 desktop build도 추가돼 있지만, Windows runner 실행 결과는 아직 확인하지 않았다. session create/open, fork/side-chat/tab, native window resize 상호작용도 브라우저·기기 runtime으로 확인하지 않았다.
-- CLI terminal text 추출 후 `npm run build`, `npm run build:app`, `git diff --check`가 통과했다. ANSI/control sequence 제거, 줄바꿈·탭의 단일 행 변환, 한글 및 단일 폭 emoji 잘림을 built output에서 smoke 확인했다. ZWJ emoji grapheme 단위 자르기는 기존 폭 계산의 범위 밖이며 이번 동작 변경에는 포함하지 않았다. import graph는 219개 TypeScript 소스, 410개 runtime edge, 824개 static edge이며 cycle은 0건이다. renderer chunk는 982.70 kB 경고와 함께 빌드됐다.
-- Renderer bridge transcript mapper 분리 후 `npm run build`, `npm run build:app` 및 `git diff --check`가 통과했다. 임시 transpile smoke에서 webSearch 다중 query의 transcript entry·replace prefix, assistant message 완료 event, command execution entry가 기존 UI event shape로 나오는 것을 확인했다. import graph는 221개 TypeScript 소스, 413개 runtime edge, 828개 static edge이며 cycle은 0건이다. desktop web renderer chunk는 982.73 kB 경고와 함께 빌드됐다.
-- Codex archive 포트의 open-ended history 계약을 재귀 JSON 타입으로 좁혔다. `codex/archive-mapper.ts`는 `unknown` 응답을 재귀 검사해 JSON 값만 Application port에 넘기며 JSON 직렬화 가능한 history는 키와 값을 그대로 보존한다. root·desktop web 빌드와 smoke(중첩 JSON 무손실 직렬화, `__proto__` 키, non-JSON 값 및 잘못된 top-level 거부)가 통과했고 `src/application`·`src/domain` 검색에서 `any`와 `Record<string, unknown>`이 나오지 않았다. import graph는 222개 TypeScript 소스, 414개 runtime edge, 830개 static edge이며 cycle은 0건이다.
-- Windows desktop UI: 직접 연결 기본 화면의 Connection 설정에서 daemon pairing 화면으로 진입할 수 있고, 저장된 daemon 모드로 시작한 pairing 화면에도 최소화·최대화/복원·닫기 버튼을 표시한다. 공통 `WindowsWindowControls`가 기존 native `windowAction` RPC를 호출하고, 메인 workspace와 pairing gate가 이를 사용한다. WebView OS 식별은 `navigator.platform`과 user agent를 함께 확인한다. root TypeScript, desktop web, Linux native desktop, Android debug 빌드와 `git diff --check`가 통과했다. Linux desktop은 `apps/desktop/build/stable-linux-x64`, Android APK는 `artifacts/android/Hive-android-debug.apk`에 생성됐다. renderer 500 kB 초과, GTK deprecated API, Gradle/npm 경고가 있었고 Windows x64 runner와 실제 Windows 화면 동작은 아직 검증하지 않았다.
+## 남은 확인
 
-## Hive 세션 goal 재개 기능
+- Android Gradle build를 Java 21 환경에서 다시 실행한다.
+- A2A 비동기 provider callback round-trip과 실제 Android 기기의 pairing/reconnect를 별도로 검증한다. 상세 내용과 OpenCode 모델 응답성 제한은 A2A runtime 문서에 기록되어 있다.
+- Desktop 화면 상호작용과 Windows runner 산출물은 이 작업에서 직접 확인하지 않았다.
+- Android 앱 복귀·재연결은 사용자가 이전 세션에서 기기 확인을 보고했다. 이 세션에서 실기기로 반복하지 않았다.
 
-리팩터링 goal을 새 작업 세션에서 이어가는 절차와 Hive 안에서 Codex 대화 goal을 재개하는 기능은 별개다. Hive는 Codex app-server의 Goal API가 있을 때 기존 Codex thread를 연 다음 `/goal resume`을 실행해 goal 상태를 `active`로 바꾼다. 새 turn은 자동 시작하지 않으므로 다음 prompt를 보내야 한다. Kiro와 OpenCode에는 현재 같은 기능이 없다. 사용법은 [`docs/codex-bridge.md`](../codex-bridge.md)에 기록했다.
+## 재개 절차
 
-## 다음 진행 항목
-
-1. 실제 desktop·Android 화면 흐름 및 mobile WSS의 TLS pin/token pairing, disconnect/reconnect는 화면/기기 런타임 게이트로 유지한다. 빌드와 Node transport smoke로 확인했다고 기록하지 않는다.
-2. Codex local/SSH/relay와 Kiro ACP 재연결 경로의 전체 작업 동작 외에 OpenCode runtime, wire/storage 호환성의 변경 후 회귀를 계속 대조한다.
-3. `refactoring-goals.ko.md`의 모든 단계와 최종 완료 조건을 다시 대조한다. 실제 기능·보안·클라이언트 흐름 검증이 남으면 goal은 계속 진행 상태로 둔다.
-4. README에 추가된 Windows x64 target은 Linux build로 검증됐다고 간주하지 않는다. Windows runner의 Electrobun package와 업로드 artifact 생성 결과를 확인한다.
-5. Android 실제 기기에서 WSS TLS pin/token pairing과 disconnect/reconnect 흐름을 확인한다. `adb devices`에는 현재 연결 기기가 없다. Desktop Bun WSS의 pin/token 거부, response schema, pending 요청의 disconnect reject, daemon 재시작 reconnect는 임시 local daemon에서 확인했고 RPC timeout 만료 경로는 scaled-timer smoke에서 확인했다.
-
-## 체크포인트 갱신 규칙
-
-작업을 멈추기 전에는 이 문서의 스냅샷과 다음 항목을 현재 저장소 증거에 맞게 갱신한다. 완료·미완료·미검증을 구분하고, 작업 트리와 빌드 결과를 혼동하지 않는다. 멈춘 세션의 대화 기록만으로 진행 지점을 추측하지 않는다.
+1. 이 문서와 목표 문서를 읽고 현재 검증 범위를 복원한다.
+2. 브랜치, HEAD, `git status`, 대상 파일의 diff를 확인하고 기존 변경을 보존한다.
+3. 상태가 문서보다 최신이면 실제 코드와 실행 결과를 기준으로 문서를 갱신한다.
+4. 코드 변경 후 관련 build와 runtime 확인을 기록한다. build 성공만으로 동작 호환성을 선언하지 않는다.

@@ -77,9 +77,6 @@ export async function runCli(args: string[], runtime: CliRuntime): Promise<void>
         "Usage: hive import <ssh-target-or-relay-uri> <thread-id> [--cwd <remote-path>] [--out-dir <local-path>]",
       );
     }
-    if (!/^[A-Za-z0-9_-]{1,128}$/.test(threadId)) {
-      throw new Error("Thread ID contains unsupported characters");
-    }
     const filePath = await runtime.importCodexThread(target, threadId, {
       ...(options.cwd ? { cwd: options.cwd } : {}),
       ...(options.outDir ? { outDir: options.outDir } : {}),

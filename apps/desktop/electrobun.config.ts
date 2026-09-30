@@ -2,7 +2,7 @@ import type { ElectrobunConfig } from "electrobun";
 
 const copy: Record<string, string> = {
   dist: "views/mainview",
-  "node_modules/@lydell": "bun/node_modules/@lydell",
+  ".hutch/node_modules/@lydell": "bun/node_modules/@lydell",
 };
 if (process.platform === "linux") {
   copy[".hutch/gtk-settings-helper"] = "bun/bin/gtk-settings-helper";

@@ -3,10 +3,11 @@ import type {
   ProviderConversationPorts,
   ProviderCreateThreadInput,
   ProviderCreateThreadResult,
+  ProviderOpenThreadOptions,
   ProviderOpenThreadResult,
 } from "../ports/provider-conversations.js";
-import { requireProviderCapability } from "./provider-capability.js";
-import { validateThreadId } from "./provider-sessions.js";
+import { requireProviderCapability } from "../policies/provider-capability.js";
+import { validateThreadId } from "../validation/thread-id.js";
 
 /** Provider-neutral validation and dispatch for creating and opening sessions. */
 export class ProviderConversationUseCases {
@@ -19,13 +20,13 @@ export class ProviderConversationUseCases {
   ): Promise<ProviderCreateThreadResult> {
     const cwd = input.cwd.trim();
     if (!cwd) throw new Error("Choose a remote workspace path before creating a session");
-    if (input.name?.trim()) requireProviderCapability(provider, "createNamedSessions", "creating named sessions");
-    if (input.permissionPresets?.length) requireProviderCapability(provider, "permissionProfileCreation", "choosing permission profiles when creating sessions");
+    if (input.name !== undefined) requireProviderCapability(provider, "createNamedSessions", "creating named sessions");
+    if (input.permissionPresets !== undefined) requireProviderCapability(provider, "permissionProfileCreation", "choosing permission profiles when creating sessions");
     return this.providers[provider].createThread(target, { ...input, cwd });
   }
 
-  openThread(provider: AssistantProvider, target: string, threadId: string): Promise<ProviderOpenThreadResult> {
+  openThread(provider: AssistantProvider, target: string, threadId: string, options?: ProviderOpenThreadOptions): Promise<ProviderOpenThreadResult> {
     validateThreadId(threadId);
-    return this.providers[provider].openThread(target, threadId);
+    return this.providers[provider].openThread(target, threadId, options);
   }
 }

@@ -2,7 +2,7 @@ import type { CodexCliEvent, CodexCliOpenedSession, CodexCliSessionPort } from "
 import type { AvailableSkill, SkillCatalog } from "../../../application/ports/skills.js";
 import type { ProviderCatalogPort, ProviderConnectionCatalog } from "../../../application/ports/provider-catalog.js";
 import type { ProviderSessionPort } from "../../../application/ports/provider-sessions.js";
-import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
+import type { ProviderConversationPort, ProviderCreateThreadInput, ProviderCreateThreadResult, ProviderOpenThreadOptions, ProviderOpenThreadResult } from "../../../application/ports/provider-conversations.js";
 import type { ProviderForkPort, ProviderForkThreadInput, ProviderForkThreadResult, ProviderSideConversationResult } from "../../../application/ports/provider-forks.js";
 import type { ProviderSkillsPort, ProviderSkillCatalog } from "../../../application/ports/provider-skills.js";
 import type { ProviderCommandsPort, ProviderCommandCatalog, ProviderCommandResult } from "../../../application/ports/provider-commands.js";
@@ -41,7 +41,7 @@ export class CodexSessionManager implements ProviderCatalogPort, ProviderSession
   renameThread(target: string, threadId: string, name: string): Promise<void> { return this.catalog.renameThread(target, threadId, name); }
   deleteThread(target: string, threadId: string): Promise<void> { return this.catalog.deleteThread(target, threadId); }
   createThread(target: string, input: ProviderCreateThreadInput): Promise<ProviderCreateThreadResult> { return this.catalog.createThread(target, input); }
-  openThread(target: string, threadId: string): Promise<ProviderOpenThreadResult> { return this.catalog.openThread(target, threadId); }
+  openThread(target: string, threadId: string, options?: ProviderOpenThreadOptions): Promise<ProviderOpenThreadResult> { return this.catalog.openThread(target, threadId, options); }
   openSession(target: string, threadId: string): Promise<CodexCliOpenedSession> { return this.catalog.openSession(target, threadId); }
   listCliSkills(target: string, threadId: string): Promise<SkillCatalog> { return this.commands.listCliSkills(target, threadId); }
   buildSkillInput(target: string, threadId: string, skill: AvailableSkill, request: string): Promise<string> { return this.commands.buildSkillInput(target, threadId, skill, request); }
@@ -50,6 +50,7 @@ export class CodexSessionManager implements ProviderCatalogPort, ProviderSession
   listSkills(target: string, threadId: string, cwd?: string): Promise<ProviderSkillCatalog> { return this.commands.listSkills(target, threadId, cwd); }
   listCommands(target: string, threadId: string): Promise<ProviderCommandCatalog> { return this.commands.listCommands(target, threadId); }
   runCommand(target: string, threadId: string, command: string, argumentsText: string): Promise<ProviderCommandResult> { return this.commands.runCommand(target, threadId, command, argumentsText); }
+  assertPromptReady(target: string, threadId: string): Promise<void> { return this.turns.assertPromptReady(target, threadId); }
   sendPrompt(target: string, threadId: string, input: ProviderPromptInput): Promise<ProviderPromptResult> { return this.turns.sendPrompt(target, threadId, input); }
   steerTurn(target: string, threadId: string, turnId: string, input: ProviderSteerInput): Promise<ProviderSteerResult> { return this.turns.steerTurn(target, threadId, turnId, input); }
   interruptTurn(target: string, threadId: string, turnId: string): Promise<ProviderInterruptResult> { return this.turns.interruptTurn(target, threadId, turnId); }

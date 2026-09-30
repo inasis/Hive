@@ -13,8 +13,4 @@ export class ProviderCatalogUseCases {
   async refresh(provider: AssistantProvider, target: string): Promise<{ threads: AssistantThread[] }> {
     return { threads: await this.providers[provider].refresh(target) };
   }
-
-  disconnect(provider: AssistantProvider, target: string): Promise<void> {
-    return this.providers[provider].disconnect(target);
-  }
 }

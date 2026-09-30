@@ -1,6 +1,6 @@
 import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { bridgeRpc } from "../../bridgeClient";
-import type { WindowResizeEdge } from "./window-resize-types";
+import type { WindowResizeEdge } from "../../shared/window-resize";
 
 type WindowResizeState = {
   edge: WindowResizeEdge;
