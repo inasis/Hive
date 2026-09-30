@@ -80,7 +80,7 @@ export function useConversationTurnControls({ state, refs, setters, actions }: C
         text,
       }]);
       if (skillId) setters.setSelectedSkill(null);
-      if (stillSelected) setters.setNotice(`현재 ${state.threadProviderName} 작업에 메시지를 전달했습니다. 다음 처리 단계부터 반영됩니다.`);
+      if (stillSelected) setters.setNotice("현재 대화에 메시지를 보냈습니다.");
     } catch (error) {
       const stillSelected = refs.runtime.isThreadSelected(promptTarget, promptProvider, promptThreadId);
       if (stillSelected) setters.setDraft((current) => current.trim() ? current : text);

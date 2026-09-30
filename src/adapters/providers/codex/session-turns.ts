@@ -8,6 +8,7 @@ import type { CodexSessionContext } from "./session-context.js";
 import { asObject, firstString } from "./protocol-utils.js";
 import { isCodexPermissionPreset } from "./session-metadata.js";
 import { appendA2ACommunicationSummary, hasA2ACommunicationSummary } from "../a2a-prompt-context.js";
+import { CodexRpcError } from "../../transport/codex-rpc.js";
 
 /** Implements Codex prompt, turn, model, reasoning, permission, and approval actions. */
 export class CodexSessionTurnAdapter implements ProviderTurnsPort, ProviderSettingsPort, ProviderApprovalsPort {
@@ -51,7 +52,18 @@ export class CodexSessionTurnAdapter implements ProviderTurnsPort, ProviderSetti
     } else {
       inputText = await buildCodexPrompt(target, input.text, catalog);
     }
-    const result = asObject(await session.api.steerTurn(threadId, turnId, inputText));
+    let result: Record<string, unknown> | undefined;
+    try {
+      result = asObject(await session.api.steerTurn(threadId, turnId, inputText));
+    } catch (error) {
+      if (!(error instanceof CodexRpcError) || error.code !== -32600 || error.message !== "no active turn to steer") {
+        throw error;
+      }
+      // A definitive no-active-turn rejection is safe to retry as a new turn; a timeout is ambiguous.
+      const started = asObject(await session.api.startTurn(threadId, inputText));
+      const startedTurnId = firstString(asObject(started?.turn)?.id);
+      return { steered: true, ...(startedTurnId ? { turnId: startedTurnId } : {}) };
+    }
     const acceptedTurnId = firstString(result?.turnId);
     return { steered: true, ...(acceptedTurnId ? { turnId: acceptedTurnId } : {}) };
   }
