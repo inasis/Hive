@@ -17,6 +17,9 @@ export type ApprovalUiDetails = {
 
 export type ApprovalUiRequest = ApprovalUiDetails & {
   requestId: number | string;
+  target?: string;
+  hostname?: string;
+  threadId?: string;
   provider: AssistantProvider;
 };
 
@@ -47,10 +50,10 @@ export type UiBridgeEvent =
   | (EventContext & { type: "terminalData"; data: string })
   | (EventContext & { type: "terminalError"; message: string })
   | (EventContext & { type: "terminalExit"; exitCode: number | null })
-  | { type: "transportDisconnected"; message?: string }
-  | { type: "transportFailed"; message?: string }
-  | { type: "transportKeepAliveFailed"; message?: string }
-  | { type: "transportReconnected" };
+  | (EventContext & { type: "transportDisconnected"; message?: string })
+  | (EventContext & { type: "transportFailed"; message?: string })
+  | (EventContext & { type: "transportKeepAliveFailed"; message?: string })
+  | (EventContext & { type: "transportReconnected" });
 
 export type UiBridgeEventListener = (event: UiBridgeEvent) => void;
 
@@ -140,13 +143,13 @@ export function normalizeBridgeEvent(event: BridgeEvent): UiBridgeEvent[] {
     case "terminal/exit":
       return [{ ...context, type: "terminalExit", exitCode: typeof params.exitCode === "number" ? params.exitCode : null }];
     case "hive/transport/disconnected":
-      return [{ type: "transportDisconnected", ...(stringValue(params.message) ? { message: stringValue(params.message) } : {}) }];
+      return [{ ...context, type: "transportDisconnected", ...(stringValue(params.message) ? { message: stringValue(params.message) } : {}) }];
     case "hive/transport/failed":
-      return [{ type: "transportFailed", ...(stringValue(params.message) ? { message: stringValue(params.message) } : {}) }];
+      return [{ ...context, type: "transportFailed", ...(stringValue(params.message) ? { message: stringValue(params.message) } : {}) }];
     case "hive/transport/keepalive-failed":
-      return [{ type: "transportKeepAliveFailed", ...(stringValue(params.message) ? { message: stringValue(params.message) } : {}) }];
+      return [{ ...context, type: "transportKeepAliveFailed", ...(stringValue(params.message) ? { message: stringValue(params.message) } : {}) }];
     case "hive/transport/reconnected":
-      return [{ type: "transportReconnected" }];
+      return [{ ...context, type: "transportReconnected" }];
     default:
       return [];
   }

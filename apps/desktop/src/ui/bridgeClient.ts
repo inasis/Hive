@@ -3,6 +3,7 @@ import { DEFAULT_ASSISTANT_PROVIDER, isAssistantProvider } from "../../../../src
 import { parseBridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
 import { isProviderDaemonApiMethod, type DaemonApiRequestMap, type DaemonApiResponseMap } from "../../../../src/interfaces/contracts/daemon-api.js";
 import { LOCAL_WORKSPACE_TARGET, type AssistantProvider, type BridgeEvent, type HiveBridgeSchema } from "../shared/bridge";
+import { DaemonConnections } from "../platform/daemon-connections";
 import { DaemonClientTransport } from "../platform/daemon-client-transport";
 import { browserPreferences } from "../platform/browser-preferences";
 import { PREFERENCE_KEYS, type PreferencesPort } from "../shared/preferences";
@@ -32,10 +33,19 @@ let activeAssistantProvider: AssistantProvider = readAssistantProvider();
 export let isDaemonClient = isMobileApp || readDesktopDaemonMode();
 const isAndroidApp = isMobileApp && window.Capacitor?.getPlatform?.() === "android";
 
-const daemonClientTransport = new DaemonClientTransport(isAndroidApp, () => !isMobileApp && isDaemonClient, {
-  connect: async (credentials) => { await nativeRpc.request.daemonConnect(credentials); },
-  request: (request) => nativeRpc.request.daemonRequest(request),
-  disconnect: async () => { await nativeRpc.request.daemonDisconnect({}); },
+const daemonClientTransport = new DaemonClientTransport(isAndroidApp, () => false, {
+  connect: async () => {}, request: async () => { throw new Error("No daemon selected"); }, disconnect: async () => {},
+});
+export const daemonConnections = new DaemonConnections(preferences, (connectionId) => new DaemonClientTransport(
+  isAndroidApp, () => !isMobileApp && isDaemonClient, {
+    connect: async (credentials) => { await nativeRpc.request.daemonConnect({ ...credentials, connectionId }); },
+    request: (request) => nativeRpc.request.daemonRequest({ ...request, connectionId }),
+    disconnect: async () => { await nativeRpc.request.daemonDisconnect({ connectionId }); },
+  },
+));
+if (!isMobileApp) nativeRpc.addMessageListener("event", (event) => {
+  const parsed = parseBridgeEvent(event);
+  if (parsed) daemonConnections.receive(parsed);
 });
 const uiEventListeners = new Map<UiBridgeEventListener, (event: BridgeEvent) => void>();
 type ProviderRestoreState = { version: number; outcome: "ready" } | { version: number; outcome: "failed"; message: string };
@@ -67,11 +77,11 @@ export function setAssistantProvider(provider: AssistantProvider): void {
 if (!isMobileApp) new Electroview({ rpc: nativeRpc });
 
 export function connectDaemonBridge(endpoint: string, token: string, fingerprint: string): Promise<void> {
-  return daemonClientTransport.connect(endpoint, token, fingerprint);
+  return daemonConnections.add({ endpoint, token, fingerprint });
 }
 
 export function disconnectDaemonBridge(): void {
-  daemonClientTransport.disconnect();
+  for (const connection of daemonConnections.snapshot()) daemonConnections.disconnect(connection.id);
 }
 
 export function addUiBridgeEventListener(listener: UiBridgeEventListener): void {
@@ -82,7 +92,7 @@ export function addUiBridgeEventListener(listener: UiBridgeEventListener): void 
     for (const uiEvent of normalizeBridgeEvent(event)) listener(uiEvent);
   };
   uiEventListeners.set(listener, onWireEvent);
-  if (isMobileApp) daemonClientTransport.addEventListener(onWireEvent);
+  if (isDaemonClient) daemonConnections.addEventListener(onWireEvent);
   else nativeRpc.addMessageListener("event", onWireEvent);
 }
 
@@ -90,8 +100,8 @@ export function removeUiBridgeEventListener(listener: UiBridgeEventListener): vo
   const onWireEvent = uiEventListeners.get(listener);
   if (!onWireEvent) return;
   uiEventListeners.delete(listener);
-  if (isMobileApp) daemonClientTransport.removeEventListener(onWireEvent);
-  else nativeRpc.removeMessageListener("event", onWireEvent);
+  daemonConnections.removeEventListener(onWireEvent);
+  if (!isMobileApp) nativeRpc.removeMessageListener("event", onWireEvent);
 }
 
 /** Mark the provider session ready after a daemon reconnect has restored its thread state. */
@@ -117,6 +127,7 @@ export async function sendPromptWithDaemonRestartRecovery(
   let turnStarted = false;
   let transportFailure: string | undefined;
   const onEvent: UiBridgeEventListener = (event) => {
+    if (event.target !== params.target) return;
     if (event.type === "transportDisconnected") disconnected = true;
     else if (event.type === "transportFailed") transportFailure = event.message ?? "Hive 데몬에 다시 연결하지 못했습니다.";
     else if (event.type === "turnStarted" && event.target === params.target && event.threadId === params.threadId &&
@@ -212,17 +223,17 @@ export const bridgeRpc = new Proxy(nativeRpc, {
           if (!isMobileApp && !nativeDesktopDaemon) {
             return includeProvider && request ? (params: unknown) => request(injectProvider(params)) : request;
           }
-          return (params: unknown) => daemonClientTransport.request(method, injectProvider(params));
+          return (params: unknown) => daemonConnections.request(method, injectProvider(params));
         },
       });
     }
     if (property === "addMessageListener") {
-      if (!isMobileApp) return Reflect.get(target, property, receiver);
-      return (_name: string, listener: (event: BridgeEvent) => void) => daemonClientTransport.addEventListener(listener);
+      if (!isDaemonClient) return Reflect.get(target, property, receiver);
+      return (_name: string, listener: (event: BridgeEvent) => void) => daemonConnections.addEventListener(listener);
     }
     if (property === "removeMessageListener") {
-      if (!isMobileApp) return Reflect.get(target, property, receiver);
-      return (_name: string, listener: (event: BridgeEvent) => void) => daemonClientTransport.removeEventListener(listener);
+      if (!isDaemonClient) return Reflect.get(target, property, receiver);
+      return (_name: string, listener: (event: BridgeEvent) => void) => daemonConnections.removeEventListener(listener);
     }
     return Reflect.get(target, property, receiver);
   },

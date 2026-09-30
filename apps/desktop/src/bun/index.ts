@@ -6,7 +6,7 @@ import { PinnedDaemonClient, type DaemonCredentials } from "./daemon-client.js";
 import { parseGtkSettings } from "./gtk-settings.js";
 
 let mainWindow: BrowserWindow;
-let daemonBridge: PinnedDaemonClient | undefined;
+const daemonBridges = new Map<string, PinnedDaemonClient>();
 
 const DEFAULT_GTK_SETTINGS: GtkSettings = {
   gtk: { version: 3, theme: "", iconTheme: "", font: "", fontFamily: "", dark: false },
@@ -67,26 +67,29 @@ function providerRequest<Method extends DaemonApiMethod>(method: Method) {
 
 const requestHandlers: NonNullable<BunRpcConfig["handlers"]["requests"]> = {
       listProviders: providerRequest("listProviders"),
-      daemonConnect: async (credentials: DaemonCredentials) => {
-        daemonBridge?.disconnect();
-        const bridge = new PinnedDaemonClient(publishBridgeEvent);
-        daemonBridge = bridge;
+      daemonConnect: async (credentials: DaemonCredentials & { connectionId?: string }) => {
+        const id = credentials.connectionId ?? "default";
+        daemonBridges.get(id)?.disconnect();
+        const bridge = new PinnedDaemonClient((event) => publishBridgeEvent({ ...event, target: `daemon:${id}` }));
+        daemonBridges.set(id, bridge);
         try {
           await bridge.connect(credentials);
           return { connected: true as const };
         } catch (error) {
-          if (daemonBridge === bridge) daemonBridge = undefined;
+          if (daemonBridges.get(id) === bridge) daemonBridges.delete(id);
           bridge.disconnect();
           throw error;
         }
       },
-      daemonRequest: ({ method, params }) => {
+      daemonRequest: ({ method, params, connectionId }) => {
+        const daemonBridge = daemonBridges.get(connectionId ?? "default");
         if (!daemonBridge) throw new Error("Hive 데몬에 연결되지 않았습니다.");
         return daemonBridge.request(method, params);
       },
-      daemonDisconnect: async () => {
-        const bridge = daemonBridge;
-        daemonBridge = undefined;
+      daemonDisconnect: async ({ connectionId }) => {
+        const id = connectionId ?? "default";
+        const bridge = daemonBridges.get(id);
+        daemonBridges.delete(id);
         bridge?.disconnect();
         return { disconnected: true as const };
       },

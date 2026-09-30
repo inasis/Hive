@@ -35,10 +35,10 @@ function HiveRoot() {
   };
 
   if (isMobileApp) {
-    return <DaemonPairingGate isWindowsDesktop={windowsDesktop}>{(changePairing) => <App isWindowsDesktop={windowsDesktop} onChangeDaemonSettings={changePairing} />}</DaemonPairingGate>;
+    return <DaemonPairingGate isWindowsDesktop={windowsDesktop}>{(changePairing, renameDaemon) => <App isWindowsDesktop={windowsDesktop} onChangeDaemonSettings={changePairing} onRenameDaemon={renameDaemon} />}</DaemonPairingGate>;
   }
   if (daemonMode) {
-    return <DaemonPairingGate isWindowsDesktop={windowsDesktop} onUseDirectConnection={useDirect}>{(changePairing) => <App isWindowsDesktop={windowsDesktop} onChangeDaemonSettings={changePairing} onUseDirectConnection={useDirect} />}</DaemonPairingGate>;
+    return <DaemonPairingGate isWindowsDesktop={windowsDesktop} onUseDirectConnection={useDirect}>{(changePairing, renameDaemon) => <App isWindowsDesktop={windowsDesktop} onChangeDaemonSettings={changePairing} onRenameDaemon={renameDaemon} onUseDirectConnection={useDirect} />}</DaemonPairingGate>;
   }
   return <App isWindowsDesktop={windowsDesktop} onUseDaemonConnection={useDaemon} />;
 }

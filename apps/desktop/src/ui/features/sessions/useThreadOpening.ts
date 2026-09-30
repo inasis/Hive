@@ -62,7 +62,7 @@ export function useThreadOpening({ state, setters, actions }: ThreadOpeningOptio
         setters.setMobileSidebarOpen(false);
       }
 
-      if (thread.provider !== state.assistantProvider || state.connectedProvider !== thread.provider) {
+      if (requestedTarget !== state.connectedTarget || thread.provider !== state.assistantProvider || state.connectedProvider !== thread.provider) {
         const connected = await actions.connect(requestedTarget, thread.provider);
         if (!connected) return;
       }

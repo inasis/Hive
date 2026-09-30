@@ -141,7 +141,7 @@ const RESPONSE_VALIDATORS: { [Method in DaemonApiMethod]: ResponseValidator<Meth
     return Boolean(record && isString(record.target) && isArrayOf(record.threads, isThread) &&
       isArrayOf(record.models, isModel) &&
       (record.permissionPresets === undefined || isArrayOf(record.permissionPresets, isPermissionPreset)) &&
-      optionalString(record, "modelWarning"));
+      optionalString(record, "modelWarning") && optionalString(record, "hostname"));
   },
   refresh: (value): value is DaemonApiResponseMap["refresh"] => {
     const record = asObject(value);

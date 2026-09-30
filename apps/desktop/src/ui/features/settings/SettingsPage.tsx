@@ -47,42 +47,59 @@ export function ThemeSettingsPage({ theme, onToggleTheme }: {
   </section>;
 }
 
+export function ProviderSettingsPage({ provider, providerOptions, busy, onProviderChange }: {
+  provider: AssistantProvider;
+  providerOptions: AssistantProviderInfo[];
+  busy: boolean;
+  onProviderChange: (provider: AssistantProvider) => void;
+}) {
+  const handleProviderChange = (value: string) => {
+    const selected = providerOptions.find((option) => option.id === value);
+    if (selected) onProviderChange(selected.id);
+  };
+  return <section className="feature-page settings-page provider-settings-page">
+    <div className="feature-heading"><span className="eyebrow">SETTINGS / PROVIDER</span><h1>Provider</h1><p>Hive에서 사용할 AI 코딩 provider를 선택합니다.</p></div>
+    <section className="settings-panel provider-settings-panel" aria-labelledby="provider-settings-title">
+      <div className="settings-panel-heading"><div><span className="eyebrow">ASSISTANT PROVIDER</span><h2 id="provider-settings-title">현재 Provider</h2></div></div>
+      <label htmlFor="assistant-provider">Provider</label>
+      <select id="assistant-provider" value={provider} disabled={busy} onChange={(event) => handleProviderChange(event.target.value)}>
+        {providerOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+      </select>
+      <p className="dialog-help">Provider를 변경하면 해당 provider의 세션 목록과 연결 설정을 사용합니다.</p>
+    </section>
+  </section>;
+}
+
 export function ConnectionSettingsPage({
   presentation,
   providerName,
-  providerOptions,
   daemonClient,
-  provider,
   target,
   workspaceHost,
   connectionState,
-  busy,
   notice,
   modelWarning,
-  onProviderChange,
   onTargetChange,
   onConnect,
   onDisconnect,
-  onChangeDaemonSettings,
+  onOpenProviderSettings,
+  onOpenDaemonSettings,
   onUseDirectConnection,
   onUseDaemonConnection,
 }: {
   presentation: ConnectionPresentation;
   providerName: string;
-  providerOptions: AssistantProviderInfo[];
   daemonClient: boolean;
-  provider: AssistantProvider;
   target: string;
   workspaceHost: string;
   connectionState: "disconnected" | "connecting" | "connected";
-  busy: boolean;
   notice: string;
   modelWarning: string;
-  onProviderChange: (provider: AssistantProvider) => void;
   onTargetChange: (target: string) => void;
   onConnect: () => void;
   onDisconnect: () => void;
-  onChangeDaemonSettings?: () => void;
+  onOpenProviderSettings?: () => void;
+  onOpenDaemonSettings?: () => void;
   onUseDirectConnection?: () => void;
   onUseDaemonConnection?: () => void;
 }) {
@@ -90,16 +107,6 @@ export function ConnectionSettingsPage({
     event.preventDefault();
     onConnect();
   };
-  const handleProviderChange = (value: string) => {
-    const selected = providerOptions.find((option) => option.id === value);
-    if (selected) onProviderChange(selected.id);
-  };
-  const providerSelect = <>
-    <label htmlFor="assistant-provider">Provider</label>
-    <select id="assistant-provider" value={provider} disabled={busy} onChange={(event) => handleProviderChange(event.target.value)}>
-      {providerOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
-    </select>
-  </>;
   const connectionActions = <div className="connection-form-actions">
     <button
       type={daemonClient ? "button" : "submit"}
@@ -117,7 +124,6 @@ export function ConnectionSettingsPage({
   </div>;
   const formContents = <>
     <div className="connection-card-heading"><div className="connection-card-icon"><Icon name="branch" /></div><div><h2>{presentation.formTitle}</h2><p>{presentation.formDescription}</p></div></div>
-    {providerSelect}
     {!daemonClient && <>
       <label htmlFor="ssh-target">작업공간 host (선택)</label>
       <input
@@ -150,7 +156,8 @@ export function ConnectionSettingsPage({
           <dt>Provider 설정</dt><dd>{presentation.runtimeLabel}</dd>
         </dl>
         <p>{presentation.statusDescription}</p>
-        {onChangeDaemonSettings && <button className="dialog-secondary daemon-settings-change" onClick={onChangeDaemonSettings}>데몬 연결 설정 변경</button>}
+        {onOpenProviderSettings && <button className="dialog-secondary daemon-settings-change" onClick={onOpenProviderSettings}>Provider 설정</button>}
+        {daemonClient && onOpenDaemonSettings && <button className="dialog-secondary daemon-settings-change" onClick={onOpenDaemonSettings}>데몬 관리</button>}
         {onUseDirectConnection && <button className="dialog-secondary" onClick={onUseDirectConnection}>SSH 또는 릴레이로 직접 연결</button>}
         {onUseDaemonConnection && <button className="dialog-secondary" onClick={onUseDaemonConnection}>Hive 데몬에 연결</button>}
       </aside>

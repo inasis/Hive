@@ -29,6 +29,7 @@ type ProviderRequestHandlers = {
 };
 
 export type DaemonRequestHandlerDependencies = {
+  hostName?: () => string;
   providerCatalog: ProviderCatalogUseCases;
   providerDisconnect: ProviderDisconnectUseCases;
   providerSessions: ProviderSessionUseCases;
@@ -48,7 +49,7 @@ export function createDaemonRequestHandlers(dependencies: DaemonRequestHandlerDe
   const providerHandlers: ProviderRequestHandlers = {
     connect: async ({ target, provider }) => {
       const catalog = await dependencies.providerCatalog.connect(provider, target);
-      return { target, ...catalog };
+      return { target, ...catalog, ...(dependencies.hostName ? { hostname: dependencies.hostName() } : {}) };
     },
     refresh: async ({ target, provider }) => dependencies.providerCatalog.refresh(provider, target),
     renameThread: async ({ target, threadId, name, provider }) => {
