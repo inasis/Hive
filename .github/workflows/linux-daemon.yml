@@ -2,8 +2,6 @@ name: Linux daemon build
 
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
   pull_request:
     paths:
       - .github/workflows/linux-daemon.yml
@@ -53,25 +51,3 @@ jobs:
             artifacts/daemon/Hive-daemon-linux-x64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 14
-
-  release:
-    name: Publish Linux daemon release assets
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: linux-daemon
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Download Linux daemon package
-        uses: actions/download-artifact@v4
-        with:
-          name: Hive-daemon-linux-x64
-          path: release-assets
-
-      - name: Attach package to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release-assets/*
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
