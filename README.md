@@ -1,131 +1,142 @@
-# Hive
+# Hive 사용 안내
 
-Hive is an Electrobun desktop app and Android client for browsing sessions from AI coding providers. It supports Codex app-server, the OpenCode HTTP server, and Kiro CLI over ACP. Linux desktop and Android connect to a Hive daemon over authenticated WSS by default; Windows desktop can select daemon pairing or direct mode. Desktop apps also support direct SSH or Hive TCP relay connections.
+Hive는 Codex, OpenCode, Kiro 코딩 세션을 데스크톱이나 Android 앱에서 이어서 사용하는 도구입니다. Linux 컴퓨터에서 Hive 데몬을 실행하고, 앱을 데몬에 페어링해 사용합니다.
 
 ```text
-Windows / Linux desktop / Android (shared React UI) ── WSS ── Hive daemon
-                                                           ├── Codex app-server
-                                                           ├── OpenCode HTTP API
-                                                           ├── Kiro CLI / ACP
-                                                           └── SSH / Hive TCP relay ── workspace host
+Linux 데몬 컴퓨터 ── 인증된 WSS ── Hive 데스크톱 / Android 앱
+       ├── Codex CLI
+       ├── OpenCode CLI 또는 기존 OpenCode 서버
+       └── Kiro CLI
 ```
 
-## Project layout
+## 다운로드
 
-- `apps/desktop`: Electrobun host process and React/Vite UI.
-- `apps/android`: Capacitor Android wrapper for the shared UI.
-- `src`: WSS daemon, Codex, OpenCode, and Kiro provider adapters, SSH and TCP relay transports, terminal/file tools, and CLI.
+[Hive 최신 릴리스](https://github.com/inasis/Hive/releases/latest)에서 다음 파일과 각 파일의 `.sha256` 체크섬을 받을 수 있습니다. 파일은 `v*` 태그를 릴리스할 때 자동으로 빌드됩니다.
 
-The root npm workspaces manage the desktop and Android packages with one root install and lockfile.
+| 파일 | 용도 | 체크섬 |
+| --- | --- | --- |
+| [`Hive-linux-x64.tar.gz`](https://github.com/inasis/Hive/releases/latest/download/Hive-linux-x64.tar.gz) | Linux x86_64 데스크톱 앱 설치 파일 | [SHA-256](https://github.com/inasis/Hive/releases/latest/download/Hive-linux-x64.tar.gz.sha256) |
+| [`Hive-android-debug.apk`](https://github.com/inasis/Hive/releases/latest/download/Hive-android-debug.apk) | Android 앱 설치 파일 (debug 서명 APK) | [SHA-256](https://github.com/inasis/Hive/releases/latest/download/Hive-android-debug.apk.sha256) |
+| [`Hive-daemon-linux-x64.tar.gz`](https://github.com/inasis/Hive/releases/latest/download/Hive-daemon-linux-x64.tar.gz) | Linux x86_64 데몬 실행 파일과 라이선스 고지 | [SHA-256](https://github.com/inasis/Hive/releases/latest/download/Hive-daemon-linux-x64.tar.gz.sha256) |
 
-Electrobun builds desktop apps for Linux, Windows, and macOS. Linux and Android open the daemon pairing screen by default. Windows opens in direct mode and can switch to daemon pairing from **Settings → Connection**; desktop clients can also use direct SSH or relay connections. The Android phone connects to a Hive daemon and does not run SSH or Codex locally.
+첫 릴리스 빌드가 완료되기 전에는 다운로드 링크에 파일이 나타나지 않습니다. 게시된 버전과 변경 내용은 [GitHub Releases](https://github.com/inasis/Hive/releases)에서 확인하세요.
 
-The daemon WSS API exposes `listProviders`, including each provider's capabilities. Provider-specific requests accept a `provider` ID; older clients that omit it continue to use Codex, while unknown IDs are rejected. `connect` returns the selected provider's models, and `updateThreadSettings` applies a model to an open session.
+## Linux 데스크톱 앱 설치
 
-## Connect Kiro
-
-Install and sign in to Kiro CLI on the Hive host, then select **Kiro** in connection settings. Hive uses `kiro-cli acp` for chat sessions and the Kiro CLI session commands to list and delete sessions. Local sessions on the Hive host and SSH hosts are supported; Kiro is not available through the Hive TCP relay. For a local CLI that is not on PATH, set `HIVE_KIRO_BIN` to its executable path before starting Hive. SSH hosts need `kiro-cli` on their non-interactive shell PATH.
-
-Kiro sessions expose model and reasoning effort selection, agent modes, tool approvals, slash commands, and skills from the Kiro skill directories. New sessions can start with additive Kiro permission presets. Hive handles Kiro ACP workspace file reads and writes, and command terminals, within the selected workspace. Attach or paste images into Kiro prompts. Session names are saved as Hive list aliases. Completed responses can be forked, and `/rewind <number>` opens a new session from an earlier prompt. The public ACP docs do not define a live-steering request that Hive can connect to.
-
-## Desktop development
-
-Requirements: Node.js 20 or newer and npm.
+Linux x86_64에서 아래 명령을 실행합니다. 데스크톱 환경에 따라 GTK 3과 WebKitGTK 4.1 런타임 패키지를 설치해야 할 수 있습니다.
 
 ```sh
-npm ci
-npm run desktop:dev
+curl -fLO https://github.com/inasis/Hive/releases/latest/download/Hive-linux-x64.tar.gz
+curl -fLO https://github.com/inasis/Hive/releases/latest/download/Hive-linux-x64.tar.gz.sha256
+sha256sum -c Hive-linux-x64.tar.gz.sha256
+tar -xzf Hive-linux-x64.tar.gz
+./installer
 ```
 
-Build the desktop package with `npm run desktop:build`. On Linux, Electrobun also needs GTK 3 and WebKitGTK 4.1 development libraries. Linux opens the daemon pairing screen first; choose **SSH 또는 릴레이로 직접 연결** to use an SSH target such as `user@host` or a `hive+tcp://` / `hive+tls://` relay URI instead.
+설치 프로그램은 Hive를 `~/.local/share/`에 설치하고 앱 메뉴에 바로가기를 만듭니다.
 
-### Windows desktop build
+## Android 앱 설치
 
-On Windows x64 with Node.js 20 or newer and npm, run these commands from the repository root:
-
-```powershell
-npm ci
-npm run desktop:build
-```
-
-The Windows executable and installer package are written to `apps/desktop/artifacts/`. Electrobun builds for the host operating system, so a Windows runner is required. The **Electrobun Windows build** GitHub Actions run also uploads a `Hive-windows-x64` artifact.
-
-## Android build
-
-Requirements: Node.js 20 or newer, Java 21, and Android SDK platform 35 with Build Tools 35.0.0.
+APK와 `.sha256` 파일을 내려받고 체크섬을 확인합니다. APK를 Android 기기로 복사해 열어 설치하거나, USB 디버깅이 켜진 기기에서 `adb`로 설치합니다. 기기에서 외부 앱 설치 허용을 요청할 수 있습니다.
 
 ```sh
-npm ci
-npm run android:build
+sha256sum -c Hive-android-debug.apk.sha256
+adb install -r Hive-android-debug.apk
 ```
 
-The script builds the shared React UI, syncs it into the Capacitor Android project, and stages a debug APK at `artifacts/android/Hive-android-debug.apk`. Android Studio can open `apps/android/android` for device runs and release signing.
+이 파일은 직접 설치용 debug 서명 APK입니다. Google Play 배포용 서명 APK는 아닙니다.
 
-## Connect desktop or Android to the daemon by IP
+## Linux 데몬 설치
 
-No domain or manually supplied TLS certificate is needed. Connect the Android phone and the computer running Hive to the same Wi-Fi, then start the daemon on the Codex host:
-
-```sh
-npm ci
-npm run daemon
-```
-
-`npm run daemon` builds and starts the Linux daemon as a standalone executable. `npm run daemon:build` builds it without starting it; the binary is written to `artifacts/daemon/hive-linux-x64` or `artifacts/daemon/hive-linux-arm64` for the build host's architecture. To create a user distribution, run `npm run daemon:package` on Linux with Node.js 20.12+ (or Node.js 21.7+ for 21.x). It writes `artifacts/daemon/Hive-daemon-linux-<arch>.tar.gz` and a `.sha256` checksum. The archive includes the executable, setup notes, and license notices; Node.js is not needed on the destination computer. The binary targets glibc-based Linux. GitHub Actions publishes the x64 archive and checksum to each GitHub Release created from a `v*` tag. You can run a built binary directly with `./artifacts/daemon/hive-linux-<arch> daemon --mobile`. Re-running `npm run daemon` restarts a daemon managed by this command with its original CLI arguments and environment. If a connected client loses the daemon during prompt submission, it keeps the exact request in memory and retries once after provider restoration, unless it already received that thread's turn-start event. Prompts are not written to disk. The command prints LAN addresses such as `wss://192.168.x.x:4753/rpc`, a certificate SHA-256 fingerprint, and a pairing token. Enter all three once in the Linux desktop or Android pairing screen. On Windows, open **Settings → Connection → Hive 데몬에 연결** first, then enter the same values in the pairing screen. If it prints multiple addresses, choose the one on the same Wi-Fi as the client. Allow TCP port 4753 through the computer's firewall. The clients pin the daemon certificate to the fingerprint you entered. The daemon stores its generated certificate and token under `~/.config/hive/` for later runs. Stop it with Ctrl+C.
-
-After downloading the x64 release files, verify and start the daemon:
+데몬은 64비트 x86 Linux(glibc)에서 실행됩니다. 데몬 컴퓨터에 Node.js를 설치할 필요는 없습니다. [최신 릴리스](https://github.com/inasis/Hive/releases/latest)에서 `Hive-daemon-linux-x64.tar.gz`와 해당 `.sha256` 파일을 다운로드한 뒤 압축을 풉니다.
 
 ```sh
 sha256sum -c Hive-daemon-linux-x64.tar.gz.sha256
 tar -xzf Hive-daemon-linux-x64.tar.gz
 cd Hive-daemon-linux-x64
+```
+
+체크섬 확인 결과가 `OK`인지 살펴본 뒤 데몬을 시작합니다.
+
+```sh
 ./hive daemon --mobile
 ```
 
-For access from outside your home network, forward TCP port 4753 on your router to port 4753 on the daemon computer (for example, `192.168.0.5`) and allow it through the computer's firewall. To have the daemon print your public address, run:
+데몬은 다음 정보를 터미널에 출력합니다.
+
+- `WSS address`: 앱에 입력할 데몬 주소. 보통 `wss://192.168.x.x:4753/rpc` 형식입니다.
+- `Certificate SHA-256`: 서버 인증서를 확인하는 지문입니다.
+- `Pairing token`: 앱 연결을 허용하는 비밀 토큰입니다.
+
+터미널을 닫거나 `Ctrl+C`를 누르면 데몬이 종료됩니다. 데몬을 실행하는 동안 터미널을 열어 두세요.
+
+## 데스크톱 또는 Android 앱 연결
+
+1. 데몬 컴퓨터와 클라이언트를 같은 Wi‑Fi 네트워크에 연결합니다.
+2. Linux 데스크톱이나 Android 앱에서 데몬 페어링 화면을 엽니다. Windows 데스크톱에서는 **설정 → 연결 → Hive 데몬에 연결**을 선택합니다.
+3. 데몬 터미널에 출력된 주소, 인증서 지문, 페어링 토큰을 앱에 입력합니다.
+4. 연결 후 사용할 provider를 고르고 세션을 선택하거나 새 세션을 시작합니다.
+
+주소가 여러 개 출력되면 클라이언트와 같은 네트워크 인터페이스의 주소를 사용하세요. 연결되지 않으면 데몬 컴퓨터의 방화벽에서 **TCP 4753**을 허용했는지 확인합니다.
+
+앱은 입력한 SHA-256 지문에 맞는 인증서만 신뢰하고, 페어링 토큰으로 데몬 연결을 인증합니다. 토큰은 비밀번호처럼 취급하고 다른 사람에게 공유하지 마세요. 페어링 정보를 다시 입력하려면 앱에서 **데몬 연결 설정 변경**을 선택합니다.
+
+데몬은 토큰과 인증서 정보를 `~/.config/hive/`에 보관해 다음 실행에도 사용합니다. 토큰을 바꾸려면 데몬을 종료하고 `~/.config/hive/mobile-token`을 삭제한 뒤 다시 시작하세요. 토큰을 바꾸면 클라이언트도 다시 페어링해야 합니다.
+
+## Provider 준비
+
+선택한 provider의 CLI를 데몬 컴퓨터에 설치하고, **데몬을 실행하는 Linux 사용자 계정으로 로그인**하세요. 데몬은 해당 계정의 CLI와 인증 정보를 사용합니다.
+
+### Codex
+
+Codex 세션을 사용할 계정에 Codex CLI를 설치하고 로그인합니다. Linux 데스크톱과 Android는 페어링한 데몬 컴퓨터의 Codex CLI에 연결합니다.
+
+### OpenCode
+
+OpenCode CLI를 설치하고 provider에 로그인합니다. 기본 설정에서 데몬이 `opencode serve`를 시작해 자동 연결합니다. CLI가 `PATH`에 없으면 실행 파일 경로를 지정합니다.
 
 ```sh
-npm run daemon -- --public-url wss://203.0.113.10:4753/rpc
-```
-
-Replace the example address with your public IP, then enter the printed `wss://<public-ip>:4753/rpc` address in the client. Port forwarding may not work behind carrier-grade NAT; use a VPN in that case.
-
-After pairing, the client connects directly to the local Codex CLI on the daemon computer; it does not ask for a second SSH target or relay URI. Codex must be installed and signed in for the same user that runs the daemon. The daemon computer must remain on and reachable from the client. For access away from home, use a VPN or configure a reachable IP and firewall.
-
-Desktop and Android apps store the daemon address, fingerprint, and token locally. **데몬 연결 설정 변경** clears the saved pairing. Delete `~/.config/hive/mobile-token` to rotate the generated token.
-
-## Connect OpenCode
-
-Choose the **OpenCode** provider in connection settings. At startup, the Hive daemon runs `opencode serve --hostname 127.0.0.1 --port 4096` and reads the server password printed by the OpenCode CLI to connect automatically. The password is held in memory and does not need to be entered in the app. Install the OpenCode CLI and sign in to providers as the same user that runs Hive.
-
-```sh
-# Set the CLI path if opencode is not on PATH
 export HIVE_OPENCODE_BIN="$HOME/.opencode/bin/opencode"
-npm run daemon
+./hive daemon --mobile
 ```
 
-To connect to an existing OpenCode server, set `HIVE_OPENCODE_URL`. Hive will not start another server in this mode. For a server using Basic auth, also set its username and password. Restart the daemon after changing these variables.
+이미 실행 중인 OpenCode 서버를 사용하려면 서버 주소를 설정하세요. Basic 인증을 사용하는 서버는 사용자 이름과 비밀번호도 지정합니다.
 
 ```sh
-export HIVE_OPENCODE_URL=http://opencode-host:4096
+export HIVE_OPENCODE_URL=http://127.0.0.1:4096
 export HIVE_OPENCODE_USERNAME=opencode
-export HIVE_OPENCODE_PASSWORD='existing server password'
-npm run daemon
+export HIVE_OPENCODE_PASSWORD='서버 비밀번호'
+./hive daemon --mobile
 ```
 
-If `HIVE_OPENCODE_URL` is unset, the daemon owns a server at the default address. You can set fixed credentials with `HIVE_OPENCODE_USERNAME`/`HIVE_OPENCODE_PASSWORD` or OpenCode's `OPENCODE_SERVER_USERNAME`/`OPENCODE_SERVER_PASSWORD`. For Android and paired clients, OpenCode and workspaces run on the daemon host. OpenCode manages its own provider API keys and model settings.
+환경 변수를 바꾼 뒤에는 데몬을 다시 시작해야 적용됩니다.
 
-## CLI
+### Kiro
 
-Build and run the session CLI:
+Kiro CLI를 설치하고 로그인합니다. `kiro-cli`가 `PATH`에 없다면 실행 파일 경로를 지정한 뒤 데몬을 시작합니다.
 
 ```sh
-npm ci
-npm run build
-node dist/cli.js --help
+export HIVE_KIRO_BIN="$HOME/.local/bin/kiro-cli"
+./hive daemon --mobile
 ```
 
-See [the CLI and desktop guide](./docs/codex-bridge.md) for relay setup, session browsing, transcript archives, and resume commands.
+## 다른 네트워크에서 연결
 
-## License
+먼저 VPN으로 데몬 컴퓨터와 클라이언트를 같은 사설 네트워크에 연결하는 방법을 권장합니다. 공인 IP로 직접 연결하려면 라우터에서 TCP 4753을 데몬 컴퓨터로 전달하고 방화벽에서도 허용한 뒤, 실제 공인 IP를 데몬에 지정합니다.
 
-Hive source code is BSD-2-Clause. See [LICENSE](./LICENSE). Electrobun, Capacitor, and the other dependencies retain their own licenses.
+```sh
+./hive daemon --mobile --public-url wss://<공인-IP>:4753/rpc
+```
+
+앱에는 데몬이 출력한 주소와 인증서 지문, 토큰을 입력합니다. `<공인-IP>`를 실제 주소로 바꾸세요. ISP의 CGNAT 환경에서는 포트 전달이 동작하지 않을 수 있습니다.
+
+## 문제 해결
+
+- **실행 파일이 시작되지 않음:** 이 릴리스는 64비트 x86 Linux(glibc)를 대상으로 합니다. `uname -m`이 `x86_64`인지 확인하세요.
+- **앱에서 연결할 수 없음:** 데몬과 클라이언트가 서로 접근 가능한 네트워크에 있는지, TCP 4753이 방화벽에서 허용됐는지 확인하세요. 여러 주소가 출력되면 올바른 네트워크 인터페이스의 주소를 사용하세요.
+- **인증서 또는 토큰 오류:** 데몬이 현재 출력한 지문과 토큰을 다시 입력하세요. 데몬 인증서나 토큰을 삭제 또는 교체했다면 클라이언트에서 저장된 페어링을 지우고 다시 연결해야 합니다.
+- **provider를 찾을 수 없음:** 선택한 CLI가 설치되어 있고 데몬을 실행한 사용자에게 `PATH`로 보이는지 확인하세요. 필요하면 위 환경 변수로 실행 파일 경로를 지정하고 데몬을 재시작하세요.
+
+## 라이선스
+
+Hive는 BSD-2-Clause 라이선스로 배포됩니다. 데몬 배포 파일에는 Hive와 포함된 구성 요소의 라이선스 고지도 들어 있습니다. 자세한 내용은 [LICENSE](./LICENSE)를 참고하세요.

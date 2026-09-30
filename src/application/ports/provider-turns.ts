@@ -1,6 +1,6 @@
 import type { PromptImageAttachment } from "../../domain/assistant.js";
+import type { A2ACommunicationSummaryItem } from "../../domain/a2a.js";
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
-import type { PendingA2ACommunication } from "./a2a-prompt-inbox.js";
 
 export type ProviderPromptInput = {
   text: string;
@@ -8,7 +8,7 @@ export type ProviderPromptInput = {
   cwd?: string;
   images?: PromptImageAttachment[];
   /** Internal Hive context. Provider transcript adapters keep this out of the visible user message. */
-  a2aCommunications?: PendingA2ACommunication[];
+  a2aCommunications?: A2ACommunicationSummaryItem[];
 };
 
 export type ProviderSteerInput = {

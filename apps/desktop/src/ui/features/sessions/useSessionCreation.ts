@@ -147,7 +147,6 @@ export function useSessionCreation({ state, platform, setters, actions }: Sessio
       setters.setMobileSidebarOpen(false);
       setters.setBusy(false);
       setters.setBusySince(null);
-      setters.setApproval(null);
       setNewSessionDialogOpen(false);
       setNewSessionName("");
       setNewSessionError("");

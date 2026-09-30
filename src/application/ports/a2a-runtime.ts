@@ -31,19 +31,25 @@ export type AgentAdapterDescriptor = {
 export type AgentExecutionContext = {
   signal: AbortSignal;
   history: AgentHistoryEntry[];
+  /** The registered source and target only; query the room explicitly when routing needs more agents. */
   agents: AgentSummary[];
   /** Permissions of the agent that requested this task, when the adapter can identify them. */
   inheritedPermissions?: AgentPermissionProfile;
+  /** Queue a child request and resolve once accepted; the current task never waits for its result. */
   delegate(input: AgentSessionToolRequest): Promise<AgentTaskRecord>;
 };
 
 export type AgentSessionToolRequest = {
+  /** Selects an asynchronous A2A request or a single-responder A2B bonded request. */
+  interaction?: "A2A" | "A2B";
   targetAgent?: string;
   targetSessionName?: string;
   selector?: AgentSelector;
   message: string;
   timeoutMs?: number;
-  /** Links a result interpretation callback to the asynchronous request that created it. */
+  /** Marks this message as the response to the active A2A task and gives the recipient a forward-or-finish choice. */
+  responseForTaskId?: string;
+  /** Links a result callback to the asynchronous request that created it. */
   callbackForTaskId?: string;
 };
 
@@ -86,8 +92,8 @@ export interface AgentAdapter extends AgentAdapterDescriptor {
   /** Whether this particular native session received a callable A2A tool. */
   canDelegate?(session: NativeSession): boolean;
 
-  /** Read the effective provider permission profile for a caller session. */
-  getPermissionProfile?(session: NativeSession): Promise<AgentPermissionProfile | undefined>;
+  /** Read the effective provider permission profile, optionally from the active task's isolated thread. */
+  getPermissionProfile?(session: NativeSession, activeTask?: AgentTask): Promise<AgentPermissionProfile | undefined>;
 
   /** Resolve an active task from a provider-native session/thread ID when the MCP client supplies one. */
   getActiveTaskIdForSession?(session: NativeSession, nativeSessionId: string): string | undefined;
@@ -151,7 +157,7 @@ export interface A2ARuntimePort {
   sendFromActiveSession(provider: string, target: string, input: AgentSessionToolRequest): Promise<AgentTaskRecord>;
   /** Persist an agent-originated request or result callback and return once it is accepted. */
   sendFromAgent(agentId: string, input: AgentSessionToolRequest): Promise<AgentTaskRecord>;
-  /** Wait briefly for an accepted task result; callers may repeat while completed is false. */
+  /** Legacy compatibility read; native agents are not given this blocking operation. */
   waitForTask(taskId: string, waitMs?: number): Promise<A2ATaskWaitResult>;
   getTask(taskId: string): AgentTaskRecord | undefined;
   getTaskGraph(rootTaskId: string): AgentTaskRecord[];

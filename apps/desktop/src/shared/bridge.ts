@@ -54,11 +54,11 @@ export type HiveBridgeSchema = {
   bun: Side<
     {
       daemonConnect: Request<
-        { endpoint: string; token: string; fingerprint: string },
+        { endpoint: string; token: string; fingerprint: string; connectionId?: string },
         { connected: true }
       >;
-      daemonRequest: Request<DaemonApiRequest, DaemonApiResponse>;
-      daemonDisconnect: Request<{}, { disconnected: true }>;
+      daemonRequest: Request<DaemonApiRequest & { connectionId?: string }, DaemonApiResponse>;
+      daemonDisconnect: Request<{ connectionId?: string }, { disconnected: true }>;
       listProviders: Request<DaemonApiRequestMap["listProviders"], DaemonApiResponseMap["listProviders"]>;
       chooseWorkspaceFolder: Request<{ startingFolder?: string }, { path: string | null }>;
       connect: Request<DaemonApiRequestMap["connect"], DaemonApiResponseMap["connect"]>;

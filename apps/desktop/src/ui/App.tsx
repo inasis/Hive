@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import { useActiveConversationState } from "./features/conversation/useActiveConversationState";
 import { useImageAttachments } from "./features/conversation/useImageAttachments";
 import { useConversationRuntime } from "./features/conversation/useConversationRuntime";
@@ -17,7 +17,6 @@ import { WorkspaceFrame } from "./features/workspace/WorkspaceFrame";
 import { TerminalPanel } from "./features/workspace/TerminalPanel";
 import { useWindowControls } from "./features/window/useWindowControls";
 import { useWindowResize } from "./features/window/useWindowResize";
-import type { ApprovalUiRequest } from "./shared/bridge-event-adapter";
 import { useApprovalResponse } from "./features/conversation/useApprovalResponse";
 import { useComposerSubmission } from "./features/conversation/useComposerSubmission";
 import { useConversationTurnControls } from "./features/conversation/useConversationTurnControls";
@@ -37,14 +36,17 @@ import { useSideChatCreation } from "./features/sessions/useSideChatCreation";
 import { useSessionForkState } from "./features/sessions/useSessionForkState";
 import { useSessionSettings } from "./features/sessions/useSessionSettings";
 import { isDaemonClient, isLinuxDesktop, isMobileApp, setAssistantProvider as persistAssistantProvider } from "./bridgeClient";
-import { LOCAL_WORKSPACE_TARGET } from "../shared/bridge";
+import { useApprovalQueue } from "./features/conversation/useApprovalQueue";
+import { daemonConnections } from "./bridgeClient";
 
-export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDirectConnection, onUseDaemonConnection }: {
+export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onRenameDaemon, onUseDirectConnection, onUseDaemonConnection }: {
   isWindowsDesktop?: boolean;
   onChangeDaemonSettings?: () => void;
+  onRenameDaemon?: (id: string) => void;
   onUseDirectConnection?: () => void;
   onUseDaemonConnection?: () => void;
 } = {}) {
+  const daemons = useSyncExternalStore(daemonConnections.subscribe, daemonConnections.snapshot);
   const { theme, setTheme, toggleTheme } = useThemeSettings();
   const connectionUi = useConnectionState({ daemonClient: isDaemonClient });
   const {
@@ -118,7 +120,7 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
   const { setActiveSideChatId, setSideChats } = sessionForkUi.setters;
   const [notice, setNotice] = useState("");
   const isWideLayout = useResponsiveWorkspaceLayout(isMobileApp);
-  const [approval, setApproval] = useState<ApprovalUiRequest | null>(null);
+  const { approval, setApproval } = useApprovalQueue();
   const workspaceNavigation = useWorkspaceNavigation({
     initialPage: isDaemonClient || Boolean(connectionUi.state.target) ? "sessions" : "settings",
   });
@@ -184,6 +186,7 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
     setActiveTab,
     activeFileTab,
     terminalContext,
+    terminalContexts,
     setTerminalContext,
     tabCreateMenuOpen,
     setTabCreateMenuOpen,
@@ -235,7 +238,7 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
   });
   const { beginWindowResize, moveWindowResize, endWindowResize } = useWindowResize(setNotice);
 
-  const loadAdditionalProviderThreads = useAdditionalProviderThreads({ setThreads, setProviderCatalogs });
+  const loadAdditionalProviderThreads = useAdditionalProviderThreads({ connectedTarget, setThreads, setProviderCatalogs });
 
   const transportEventSetters = useMemo(() => ({
     setConnectionState,
@@ -425,7 +428,7 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
     actions: {
       cacheActiveThreadView,
       resetWorkspace: resetWorkspaceForConnection,
-      resetProviderThreadView: resetThreadForProviderSwitch,
+      resetProviderThreadView: (provider) => { resetThreadForProviderSwitch(provider); setImageAttachments([]); },
       clearConnectionState,
       loadAdditionalProviderThreads,
       openConnectionSettings: () => openSettings("connection"),
@@ -514,7 +517,7 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
     },
     setters: transportEventSetters,
     loadAdditionalProviderThreads,
-    restoreThread: (thread, sideChatId) => openThread(LOCAL_WORKSPACE_TARGET, thread, sideChatId),
+    restoreThread: (thread, sideChatId) => openThread(connectedTarget, thread, sideChatId),
   });
 
   const { forkingEntryId, forkCompletedResponse } = useResponseFork({
@@ -756,7 +759,7 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
         changeName: (value) => { setRenameSessionName(value); setRenameSessionError(""); },
         save: () => void saveSessionName(),
       },
-      approval,
+      approval: approval ? { ...approval, hostname: daemons.find((daemon) => daemon.target === approval.target)?.hostname } : null,
       onAnswerApproval: (answer) => void answerApproval(answer),
       deletion: {
         thread: deleteDialog,
@@ -779,17 +782,20 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
       sidebar={{
         layout: { activePage, mobileSidebarOpen },
         provider: { assistantProvider, assistantProviderName, threadProvider, daemonClient: isDaemonClient, connectionState },
-        sessions: { threads, connectedTarget, chatRootThreadId, collapsedProjects, creatingSession, openingThread, renamingSession, deletingSession },
+        sessions: { daemons: isDaemonClient ? daemons : [], threads, connectedTarget, chatRootThreadId, collapsedProjects, creatingSession, openingThread, renamingSession, deletingSession },
         gtk: {
           leftControls: sidebarGtkLeftDecorations.length > 0 ? <div className="window-controls window-controls-left sidebar-window-controls electrobun-webkit-app-region-no-drag" style={gtkControlStyle} aria-label="왼쪽 창 제어">{renderGtkDecorations(sidebarGtkLeftDecorations, "left")}</div> : undefined,
           rightControls: sidebarGtkRightDecorations.length > 0 ? <div className="window-controls window-controls-right sidebar-window-controls electrobun-webkit-app-region-no-drag" style={gtkControlStyle} aria-label="오른쪽 창 제어">{renderGtkDecorations(sidebarGtkRightDecorations, "right")}</div> : undefined,
         },
         actions: {
-          openNewWorkspace: () => { navigate("sessions"); openNewSessionDialog("workspace"); },
-          openNewSession: (path) => { navigate("sessions"); openNewSessionDialog("session", path); },
+          openNewWorkspace: async (requestedTarget) => { if (requestedTarget && requestedTarget !== connectedTarget && !await connect(requestedTarget)) return; navigate("sessions"); openNewSessionDialog("workspace"); },
+          openNewSession: async (path, requestedTarget) => { if (requestedTarget && requestedTarget !== connectedTarget && !await connect(requestedTarget)) return; navigate("sessions"); openNewSessionDialog("session", path); },
           refresh: () => { void refresh(); },
           openThread: (requestedTarget, thread) => { navigate("sessions"); void openThread(requestedTarget, thread); },
           openRenameSession: openRenameSessionDialog,
+          selectDaemon: (target) => { void connect(target); },
+          manageDaemons: onChangeDaemonSettings,
+          renameDaemon: onRenameDaemon,
           openDeleteSession: openDeleteSessionDialog,
           toggleProject,
           navigate,
@@ -821,7 +827,7 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
               provider: threadProvider,
               providerName: threadProviderName,
               target: connectedTarget,
-              targetLabel: formatWorkspaceTargetLabel(connectedTarget),
+              targetLabel: daemons.find((daemon) => daemon.target === connectedTarget)?.hostname ?? formatWorkspaceTargetLabel(connectedTarget),
               cwd: activeCwd,
               entries,
               opening: openingThread,
@@ -882,7 +888,7 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
               onOpenModelSettings: () => setModelSettingsDialogOpen(true),
             },
             emptyState: { connectionState, providerName: assistantProviderName, creatingSession, notice },
-            terminalPanel: terminalContext ? <TerminalPanel target={terminalContext.target} cwd={terminalContext.cwd} /> : null,
+            terminalPanel: terminalContexts.length ? <>{terminalContexts.map((context) => <div key={context.target} hidden={context.target !== connectedTarget}><TerminalPanel target={context.target} cwd={context.cwd} /></div>)}</> : null,
             actions: {
               setActiveTab,
               switchChatTab,
@@ -914,26 +920,29 @@ export function App({ isWindowsDesktop = false, onChangeDaemonSettings, onUseDir
             onUseSkill: (skill) => { setSelectedSkill(skill); setDraft(""); setActivePage("sessions"); },
           }}
           theme={{ theme, onToggleTheme: toggleTheme }}
+          providerSettings={{
+            provider: assistantProvider,
+            providerOptions: availableProviders,
+            busy,
+            onProviderChange: (provider) => chooseProvider(provider, true),
+          }}
           connection={{
             presentation: getConnectionPresentation(assistantProvider, isDaemonClient, assistantProviderName),
             providerName: assistantProviderName,
-            providerOptions: availableProviders,
             daemonClient: isDaemonClient,
-            provider: assistantProvider,
             target,
-            workspaceHost: formatWorkspaceTargetLabel(connectedTarget || target) || "이 컴퓨터",
+            workspaceHost: daemons.find((daemon) => daemon.target === connectedTarget)?.hostname ?? (isDaemonClient ? "선택한 데몬 없음" : formatWorkspaceTargetLabel(connectedTarget || target) || "이 컴퓨터"),
             connectionState,
-            busy,
             notice,
             modelWarning,
-            onProviderChange: (provider) => chooseProvider(provider, true),
             onTargetChange: setTarget,
             onConnect: () => {
-              if (isDaemonClient) void connect(LOCAL_WORKSPACE_TARGET);
+              if (isDaemonClient) void connect(connectedTarget || daemons.find((daemon) => daemon.state === "connected")?.target);
               else void connect();
             },
             onDisconnect: () => void disconnect(),
-            onChangeDaemonSettings,
+            onOpenProviderSettings: () => setSettingsSection("provider"),
+            onOpenDaemonSettings: () => setSettingsSection("daemons"),
             onUseDirectConnection,
             onUseDaemonConnection,
           }}

@@ -5,7 +5,7 @@ import type { ProviderConversationPort } from "../../application/ports/provider-
 import type { ProviderSessionPort } from "../../application/ports/provider-sessions.js";
 import type { ProviderSettingsPort } from "../../application/ports/provider-settings.js";
 import type { ProviderPromptInput, ProviderTurnsPort } from "../../application/ports/provider-turns.js";
-import type { PendingA2ACommunication } from "../../application/ports/a2a-prompt-inbox.js";
+import type { A2ACommunicationSummaryItem } from "../../domain/a2a.js";
 import { a2aCommunicationGroupKey } from "../../domain/a2a.js";
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
 import { assistantProviderSupports } from "../../domain/provider-catalog.js";
@@ -95,7 +95,7 @@ export class HiveSessionAgentAdapter<Provider extends AssistantProvider> impleme
         "Session discovery is restricted to explicitly configured Hive targets.",
         "Availability and cancellation depend on the provider port and its active session connection.",
         "Provider permissions can still restrict native tool, file, or shell access.",
-        "A2A delegation is available only on native sessions where Hive injected the a2a_send tool.",
+        "A2A and A2B requests are available only on native sessions where Hive injected the corresponding MCP tools.",
       ],
     });
     this.targets = [...new Set(options.targets.map((target) => target.trim()).filter(Boolean))];
@@ -108,9 +108,13 @@ export class HiveSessionAgentAdapter<Provider extends AssistantProvider> impleme
     return this.capabilities.delegation && (this.options.canDelegateSession?.(session) ?? true);
   }
 
-  async getPermissionProfile(session: NativeSession): Promise<AgentPermissionProfile | undefined> {
-    const address = decodeAddress(session, this.options.provider);
-    if (!address) return undefined;
+  async getPermissionProfile(session: NativeSession, activeTask?: AgentTask): Promise<AgentPermissionProfile | undefined> {
+    const ownerAddress = decodeAddress(session, this.options.provider);
+    if (!ownerAddress) return undefined;
+    const active = activeTask ? this.activeTasks.get(activeTask.taskId) : undefined;
+    const address = active?.ownerAddress.target === ownerAddress.target && active.ownerAddress.threadId === ownerAddress.threadId
+      ? active.address ?? ownerAddress
+      : ownerAddress;
     const view = await this.options.conversations.openThread(address.target, address.threadId, { includeTranscript: false, minimal: true });
     const profile = view.permissionProfile;
     if (!profile || !this.options.isPermissionProfileSupported?.(profile)) return undefined;
@@ -281,8 +285,8 @@ export class HiveSessionAgentAdapter<Provider extends AssistantProvider> impleme
     try {
       const message = buildTaskPrompt(input.task, context, input.message, this.canDelegate(session));
       const sourceName = context.agents.find((agent) => agent.agentId === input.task.sourceAgent)?.sessionName;
-      const communication: PendingA2ACommunication = {
-        kind: input.task.metadata?.delivery === "a2a-result-callback" ? "result" : "request",
+      const communication: A2ACommunicationSummaryItem = {
+        kind: input.task.metadata?.delivery === "a2a-result-callback" || input.task.metadata?.delivery === "a2a-result-delivery" ? "result" : "request",
         taskId: input.task.taskId,
         sourceAgentId: input.task.sourceAgent,
         ...(sourceName ? { sourceSessionName: sourceName } : {}),
@@ -398,7 +402,7 @@ export class HiveSessionAgentAdapter<Provider extends AssistantProvider> impleme
       const status = normalizedTurnStatus(completion);
       if (summaryCommunications.length && output) {
         const targetAgent = context.agents.find((agent) => agent.agentId === task.targetAgent);
-        const resultCommunication: PendingA2ACommunication = {
+        const resultCommunication: A2ACommunicationSummaryItem = {
           kind: "result",
           taskId: task.taskId,
           sourceAgentId: task.targetAgent,
@@ -560,20 +564,26 @@ function createActiveTask(ownerAddress: SessionAddress): ActiveTask {
 
 function buildTaskPrompt(task: AgentTask, _context: AgentExecutionContext, message: string, canDelegate: boolean): string {
   const delivery = task.metadata?.delivery;
-  const isResultCallback = delivery === "a2a-result-callback";
+  const responseForTaskId = typeof task.metadata?.responseForTaskId === "string"
+    ? task.metadata.responseForTaskId
+    : undefined;
   const callbackForTaskId = typeof task.metadata?.callbackForTaskId === "string"
     ? task.metadata.callbackForTaskId
     : undefined;
   const lines = [
-    "Handle one Hive A2A task in a fresh session. Use only this request as task context; read workspace files if more context is needed.",
+    "Hive task. Use only this request; read workspace files if more context is needed.",
     canDelegate
-      ? `A2A tools are available. Your current Hive agent ID is ${task.targetAgent}; include it as callerAgentId in a2a_list_agents and a2a_send. Hive verifies it against the active task. Use a2a_list_agents only when needed. a2a_send returns an accepted taskId; call a2a_wait_task with that ID and repeat while completed is false to receive the actual result.`
+      ? `Hive tools: callerAgentId=${task.targetAgent}; sends are async, do not wait or poll for results.`
       : "A2A tools are unavailable; complete the task directly.",
   ];
-  if (isResultCallback && callbackForTaskId) {
-    lines.push(`Result callback for ${callbackForTaskId}: give the original caller a useful summary. Do not send another callback.`);
+  if (delivery === "a2a-result-callback" && callbackForTaskId) {
+    lines.push(`A2A result callback for task ${callbackForTaskId}: forward with responseForTaskId=${task.taskId} or finish. This result was already returned to you; do not send another callback. Do not wait for accepted sends.`);
+  } else if (delivery === "a2a-result-delivery" && responseForTaskId) {
+    lines.push(`A2A response from ${task.sourceAgent} for task ${responseForTaskId}: forward with responseForTaskId=${task.taskId}, return to sender with callbackForTaskId=${task.taskId}, or finish. Do not wait for accepted sends.`);
+  } else if (delivery === "a2b-bonded-request") {
+    lines.push(`Bonded A2B from ${task.sourceAgent}: answer directly; do not delegate. If the caller must resume, send it a2a_send with callbackForTaskId=${task.taskId}.`);
   } else if (delivery === "a2a-async-request") {
-    lines.push("Complete the requested work and return the actual result in this task response. For any delegated work, call a2a_send and then a2a_wait_task until it completes before incorporating the delegated result. Hive returns this task result to its caller through a2a_wait_task and a communication summary; do not send an acceptance-only callback.");
+    lines.push(`A2A request from ${task.sourceAgent}: answer and deliver it with a2a_send to a chosen existing/new agent using responseForTaskId=${task.taskId}. To return it to the caller, target that agent with callbackForTaskId=${task.taskId}. Accepted delivery succeeds; finish without waiting.`);
   }
   lines.push("", "Request:", message);
   return lines.join("\n");

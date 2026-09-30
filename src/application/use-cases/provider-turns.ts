@@ -9,7 +9,6 @@ import type {
   ProviderSteerResult,
   ProviderTurnsPorts,
 } from "../ports/provider-turns.js";
-import type { A2APromptInboxPort } from "../ports/a2a-prompt-inbox.js";
 import type { AssistantEventPublisher } from "../ports/events.js";
 import { validateThreadId } from "../validation/thread-id.js";
 
@@ -17,7 +16,6 @@ import { validateThreadId } from "../validation/thread-id.js";
 export class ProviderTurnUseCases<Provider extends AssistantProvider = AssistantProvider> {
   constructor(
     private readonly providers: Pick<ProviderTurnsPorts, Provider>,
-    private readonly a2aInbox?: A2APromptInboxPort,
     private readonly publishEvent?: AssistantEventPublisher,
   ) {}
 
@@ -27,32 +25,20 @@ export class ProviderTurnUseCases<Provider extends AssistantProvider = Assistant
     if (assistantProviderSupports(provider, "requiresModelBeforePrompt")) {
       await this.providers[provider].assertPromptReady(target, threadId);
     }
-    const claim = await this.a2aInbox?.claimForPrompt(provider, target, threadId);
-    const prompt = claim
-      ? { ...input, a2aCommunications: [...(input.a2aCommunications ?? []), ...claim.communications] }
-      : input;
-    try {
-      const result = await this.providers[provider].sendPrompt(target, threadId, prompt);
-      if (claim) {
-        await this.a2aInbox?.acceptPromptClaim(claim.claimId, result.turnId);
-      }
-      const communications = prompt.a2aCommunications;
-      if (communications?.length) {
-        this.publishEvent?.({
-          type: "a2aCommunicationSummary",
-          target,
-          threadId,
-          provider,
-          summaryId: a2aCommunicationGroupKey(communications),
-          ...(result.turnId ? { responseTurnId: result.turnId } : {}),
-          communications,
-        });
-      }
-      return result;
-    } catch (error) {
-      if (claim) await this.a2aInbox?.releasePromptClaim(claim.claimId);
-      throw error;
+    const result = await this.providers[provider].sendPrompt(target, threadId, input);
+    const communications = input.a2aCommunications;
+    if (communications?.length) {
+      this.publishEvent?.({
+        type: "a2aCommunicationSummary",
+        target,
+        threadId,
+        provider,
+        summaryId: a2aCommunicationGroupKey(communications),
+        ...(result.turnId ? { responseTurnId: result.turnId } : {}),
+        communications,
+      });
     }
+    return result;
   }
 
   steerTurn(provider: Provider, target: string, threadId: string, turnId: string, input: ProviderSteerInput): Promise<ProviderSteerResult> {

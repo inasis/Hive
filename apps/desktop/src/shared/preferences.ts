@@ -9,6 +9,7 @@ export const PREFERENCE_KEYS = {
   assistantProvider: "hive.assistantProvider.v1",
   sshTarget: "hive.sshTarget",
   theme: "hive.theme",
+  daemonConnections: "hive.daemonConnections.v1",
   daemonPairing: "hive.mobile.desktop.v1",
   persistentForkTabs: "hive.persistentForkTabs.v1",
 } as const;

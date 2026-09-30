@@ -14,7 +14,7 @@ type HiveTransportPlugin = {
   connect(options: { url: string; fingerprint: string; connectionId: string }): Promise<void>;
   send(options: { data: string; connectionId: string }): Promise<void>;
   disconnect(options?: { connectionId?: string }): Promise<void>;
-  setKeepAlive(options: { enabled: boolean }): Promise<void>;
+  setKeepAlive(options: { enabled: boolean; connectionId: string }): Promise<void>;
   setStatusBarAppearance(options: { light: boolean }): Promise<void>;
   addListener(event: "message", listener: (event: { connectionId: string; data: string }) => void): Promise<PluginListenerHandle>;
   addListener(event: "error", listener: (event: { connectionId: string; message: string }) => void): Promise<PluginListenerHandle>;
@@ -31,6 +31,7 @@ export class MobileDaemonSocket {
   private closeOperation: (() => void) | undefined;
   private nativeListenerHandles: PluginListenerHandle[] = [];
   private generation = 0;
+  private readonly keepAliveId = crypto.randomUUID();
   private nativeConnectionId: string | undefined;
 
   constructor(private readonly android: boolean) {}
@@ -40,7 +41,7 @@ export class MobileDaemonSocket {
   }
 
   setKeepAlive(enabled: boolean): Promise<void> {
-    return this.android ? hiveTransport.setKeepAlive({ enabled }) : Promise.resolve();
+    return this.android ? hiveTransport.setKeepAlive({ enabled, connectionId: this.keepAliveId }) : Promise.resolve();
   }
 
   async connect(credentials: MobileBridgeCredentials, events: MobileDaemonSocketEvents): Promise<void> {
@@ -81,9 +82,8 @@ export class MobileDaemonSocket {
   }
 
   private async connectAndroid(credentials: MobileBridgeCredentials, events: MobileDaemonSocketEvents, generation: number): Promise<void> {
-    await hiveTransport.disconnect();
     if (!this.isCurrent(generation)) return;
-    const connectionId = `hive-${generation}-${Date.now()}`;
+    const connectionId = `hive-${crypto.randomUUID()}`;
     this.nativeConnectionId = connectionId;
     this.nativeListenerHandles = await Promise.all([
       hiveTransport.addListener("message", ({ connectionId: eventConnectionId, data }) => {

@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import { serializeAssistantEvent } from "../interfaces/contracts/daemon-assistant-event-serializer.js";
 import { serializeTerminalEvent } from "../interfaces/contracts/daemon-terminal-event-serializer.js";
 import type { SerializedBridgeEvent } from "../interfaces/contracts/daemon-events.js";
@@ -15,7 +16,7 @@ const publishBridgeEvent = (event: SerializedBridgeEvent): void => {
 };
 const publishAssistantEvent = (event: AssistantEvent): void => publishBridgeEvent(serializeAssistantEvent(event));
 const runtime = createAssistantRuntime(publishAssistantEvent, (event) => publishBridgeEvent(serializeTerminalEvent(event)));
-const handlers = createDaemonRequestHandlers(runtime.useCases);
+const handlers = createDaemonRequestHandlers({ ...runtime.useCases, hostName: hostname });
 let a2aHttpServer: A2AHttpServer | undefined;
 let previousA2AToolEnvironment: { url?: string; token?: string } | undefined;
 

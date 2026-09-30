@@ -124,12 +124,36 @@ export class CodexSessionCatalogAdapter implements ProviderCatalogPort, Provider
     const threadRead = asObject(threadReadValue);
     const thread = asObject(threadRead?.thread);
     if (!thread) throw new Error("Codex returned an invalid thread/read response");
+    const knownSettings = session.settingsByThread.get(threadId);
+    if (options.minimal && !options.includeTranscript) {
+      const cwd = firstString(thread.cwd) ?? "";
+      const model = firstString(thread.model, knownSettings?.model) ?? session.models.find((candidate) => candidate.isDefault)?.model ?? "";
+      const reasoningEffort = firstString(thread.reasoningEffort, knownSettings?.effort) ?? null;
+      const permissionProfile = knownSettings?.permissionProfile ?? null;
+      const collaborationMode = knownSettings?.collaborationMode ?? "default";
+      if (knownSettings) {
+        session.settingsByThread.set(threadId, { ...knownSettings, model, effort: reasoningEffort });
+      }
+      const catalog = session.skillsByThread.get(threadId) ?? { skills: [], warnings: [] };
+      return {
+        target,
+        threadId,
+        title: firstString(thread.name, thread.title, thread.preview) ?? threadId,
+        cwd,
+        entries: [],
+        skills: catalog.skills.map(mapCodexSkill),
+        skillWarnings: catalog.warnings,
+        model,
+        reasoningEffort,
+        permissionProfile,
+        currentModeId: collaborationMode,
+      };
+    }
     const resumed = isFreshThread ? undefined : asObject(await session.api.resumeThread(threadId, { excludeTurns: true }));
     const resumedThread = isFreshThread ? thread : asObject(resumed?.thread);
     if (!resumedThread) throw new Error("Codex returned an invalid thread/resume response");
 
     const cwd = firstString(resumedThread.cwd, thread.cwd) ?? "";
-    const knownSettings = session.settingsByThread.get(threadId);
     const model = firstString(resumed?.model, knownSettings?.model) ?? session.models.find((candidate) => candidate.isDefault)?.model ?? "";
     const reasoningEffort = firstString(resumed?.reasoningEffort, knownSettings?.effort) ?? null;
     const permissionProfile = firstString(asObject(resumed?.activePermissionProfile)?.id, knownSettings?.permissionProfile) ?? null;

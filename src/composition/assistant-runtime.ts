@@ -143,8 +143,7 @@ export function createAssistantRuntime(
   });
   const a2aReady = a2aRuntime.initialize();
   void a2aReady.catch(() => undefined);
-  subscribeAssistantEvents((event) => a2aRuntime.observeProviderEvent(event));
-  const providerTurns = new ProviderTurnUseCases(providers, a2aRuntime, emitAssistantEvent);
+  const providerTurns = new ProviderTurnUseCases(providers, emitAssistantEvent);
   const useCases = {
     providerCatalog: new ProviderCatalogUseCases(providers),
     providerSessions: new ProviderSessionUseCases(providers),

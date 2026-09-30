@@ -72,6 +72,10 @@ export function createConnectionViewLifecycle(dependencies: {
   };
 
   const resetThreadForProviderSwitch = (provider: AssistantProvider): void => {
+    setters.setBusy(false);
+    setters.setBusySince(null);
+    setters.setActiveTurnId("");
+    setters.setStoppingTurn(false);
     setters.setActiveSideChatId("");
     setters.setActiveThreadId("");
     setters.setActiveThreadProvider(null);

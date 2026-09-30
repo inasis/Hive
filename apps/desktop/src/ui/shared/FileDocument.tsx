@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { WorkspaceFileText } from "../../shared/bridge";
+import { MermaidMarkdownPre } from "./MermaidMarkdown";
 import { basename } from "./path-name";
 import { fileSyntaxLanguageFromName, fileSyntaxLanguageFromPath, highlightFileCode } from "./file-syntax";
 
@@ -15,6 +16,7 @@ const markdownComponents: Components = {
     const language = languageName ? fileSyntaxLanguageFromName(languageName) : null;
     return <code className={className}>{language ? highlightFileCode(nodeText(children), language) : children}</code>;
   },
+  pre: MermaidMarkdownPre,
   table: ({ children }) => <div className="markdown-table-wrap"><table>{children}</table></div>,
 };
 

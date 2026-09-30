@@ -113,6 +113,8 @@ export function WorkspaceFrame({ layout, actions, sidebar, windowChrome, windowR
 function settingsSectionTitle(section: SettingsSection): string {
   switch (section) {
     case "connection": return "연결";
+    case "provider": return "Provider";
+    case "daemons": return "데몬 관리";
     case "skills": return "스킬";
     case "mcp": return "MCP";
     case "theme": return "테마";

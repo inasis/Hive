@@ -16,10 +16,16 @@ export function useWorkspaceTabs({
   closeMobileSidebar: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("chat");
-  const [terminalContext, setTerminalContext] = useState<{ target: string; cwd: string } | null>(null);
+  const [terminalContexts, setTerminalContexts] = useState<Record<string, { target: string; cwd: string }>>({});
+  const terminalContext = terminalContexts[target] ?? null;
+  const setTerminalContext = (context: { target: string; cwd: string } | null) => setTerminalContexts((current) => {
+    if (context) return { ...current, [context.target]: context };
+    const next = { ...current }; delete next[target]; return next;
+  });
   const [tabCreateMenuOpen, setTabCreateMenuOpen] = useState(false);
   const [tabCreateMenuPosition, setTabCreateMenuPosition] = useState<{ top: number; left: number } | null>(null);
-  const [workspaceFileTabs, setWorkspaceFileTabs] = useState<WorkspaceFileTab[]>([]);
+  const [allWorkspaceFileTabs, setWorkspaceFileTabs] = useState<WorkspaceFileTab[]>([]);
+  const workspaceFileTabs = allWorkspaceFileTabs.filter((tab) => tab.target === target);
   const [filePanelOpen, setFilePanelOpen] = useState(false);
   const [filePanelInitialized, setFilePanelInitialized] = useState(false);
   const [workspaceFileOpenRequest, setWorkspaceFileOpenRequest] = useState<WorkspaceFileOpenRequest | null>(null);
@@ -112,7 +118,7 @@ export function useWorkspaceTabs({
     const index = workspaceFileTabs.findIndex((tab) => tab.id === id);
     const remaining = workspaceFileTabs.filter((tab) => tab.id !== id);
     const nextTab = remaining[index] ?? remaining[index - 1];
-    setWorkspaceFileTabs(remaining);
+    setWorkspaceFileTabs((current) => current.filter((tab) => tab.id !== id));
     if (activeTab === `file:${id}`) setActiveTab(nextTab ? `file:${nextTab.id}` : terminalContext ? "terminal" : "chat");
   };
 
@@ -121,6 +127,7 @@ export function useWorkspaceTabs({
     setActiveTab,
     activeFileTab,
     terminalContext,
+    terminalContexts: Object.values(terminalContexts),
     setTerminalContext,
     tabCreateMenuOpen,
     setTabCreateMenuOpen,

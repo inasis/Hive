@@ -155,7 +155,7 @@ export function ConversationWorkspace({ thread, tabs, composer, emptyState, term
             {emptyState.notice && <div className="inline-notice" role="status"><Icon name="info" />{emptyState.notice}</div>}
           </div>
         )}
-        {tabs.terminal && <div className="workspace-tab-panel" hidden={tabs.active !== "terminal"}>{terminalPanel}</div>}
+        {terminalPanel && <div className="workspace-tab-panel" hidden={tabs.active !== "terminal"}>{terminalPanel}</div>}
         {tabs.activeFile && tabs.active === `file:${tabs.activeFile.id}` && <FileDocument file={tabs.activeFile.file} />}
       </section>
     </div>

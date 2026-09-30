@@ -126,7 +126,7 @@ export type DaemonApiRequestMap = {
 /** Exact response DTOs for every method crossing a daemon/bridge boundary. */
 export type DaemonApiResponseMap = {
   listProviders: { providers: AssistantProviderInfo[] };
-  connect: { target: string; threads: AssistantThread[]; models: AssistantModel[]; permissionPresets?: AssistantPermissionPreset[]; modelWarning?: string };
+  connect: { hostname?: string; target: string; threads: AssistantThread[]; models: AssistantModel[]; permissionPresets?: AssistantPermissionPreset[]; modelWarning?: string };
   refresh: { threads: AssistantThread[] };
   createThread: ProviderCreateThreadResult;
   renameThread: { renamed: true };

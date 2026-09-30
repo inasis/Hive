@@ -28,7 +28,7 @@ const A2A_MCP_TOOLS = [
   },
   {
     name: "a2a_send",
-    description: "Queue work for another Hive agent. Returns only an accepted taskId, not the result. When you need the answer, you must call a2a_wait_task with that ID until completed is true; do not treat acceptance as the task result. A2A results also appear as communication summaries in the caller session.",
+    description: "Send async work or an A2A response to an existing/new Hive agent. Set responseForTaskId to the active task ID when sending its answer. Acceptance confirms delivery, not completion; the recipient may forward, return once to the sender with callbackForTaskId, or finish. A recipient of a return callback may forward or finish, but cannot callback again. Do not wait or poll.",
     inputSchema: {
       type: "object",
       properties: {
@@ -48,6 +48,7 @@ const A2A_MCP_TOOLS = [
         },
         message: { type: "string", minLength: 1, description: "Work request or callback result." },
         timeoutMs: { type: "integer", minimum: 1, description: "Optional task timeout in milliseconds." },
+        responseForTaskId: { type: "string", minLength: 1, description: "Active task ID when this message delivers its answer to another agent; the receiver can forward, return it, or finish." },
         callbackForTaskId: { type: "string", minLength: 1, description: "Task ID of the request being answered; targetAgent must be its original caller." },
       },
       required: ["message"],
@@ -56,15 +57,17 @@ const A2A_MCP_TOOLS = [
     },
   },
   {
-    name: "a2a_wait_task",
-    description: "Wait briefly for an accepted A2A task and return its actual result. Repeat with the same taskId while completed is false.",
+    name: "a2b_send",
+    description: "Submit asynchronous bonded work to one exact agentId. That agent must answer and cannot delegate. Returns taskId on acceptance; continue without waiting or polling.",
     inputSchema: {
       type: "object",
       properties: {
-        taskId: { type: "string", minLength: 1, description: "Task ID returned by a2a_send." },
-        waitMs: { type: "integer", minimum: 1, maximum: 30000, description: "How long to wait before returning the latest state; defaults to 20000." },
+        callerAgentId: { type: "string", minLength: 1, description: "Current Hive agent ID from the active task prompt." },
+        targetAgent: { type: "string", minLength: 1, description: "Exact agentId from a2a_list_agents; bonded work cannot target a selector or session title." },
+        message: { type: "string", minLength: 1, description: "Work request for the single bonded responder." },
+        timeoutMs: { type: "integer", minimum: 1, description: "Optional task timeout in milliseconds." },
       },
-      required: ["taskId"],
+      required: ["targetAgent", "message"],
       additionalProperties: false,
     },
   },
@@ -205,7 +208,7 @@ export class A2AHttpServer {
           protocolVersion: "2025-03-26",
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: "hive-a2a", version: "1.0.0" },
-          instructions: "Use a2a_list_agents to find agents. A Hive A2A task prompt supplies your current agent ID; pass it as callerAgentId to a2a_list_agents and a2a_send so Hive can verify the active task. a2a_send returns acceptance only, not the answer. When you need the result, use a2a_wait_task until completed is true; never report the acceptance as the completed result.",
+          instructions: "A Hive prompt supplies your agent ID; pass it as callerAgentId to send tools. A2A/A2B sends return acceptance immediately; continue without polling. A2A allows same-root delegation/callback. A2B binds an exact agentId, which must answer and cannot delegate.",
         };
       } else if (packet.method === "ping" || packet.method === "notifications/initialized") {
         result = {};
@@ -279,7 +282,7 @@ export class A2AHttpServer {
       const agents = this.runtime.listAgentsForAgent(source.agentId).filter((agent) => agent.agentId !== source.agentId);
       return { content: [{ type: "text", text: JSON.stringify(agents) }] };
     }
-    if (name !== "a2a_send") throw new Error(`Unknown Hive A2A tool: ${name || "(missing name)"}`);
+    if (name !== "a2a_send" && name !== "a2b_send") throw new Error(`Unknown Hive A2A tool: ${name || "(missing name)"}`);
     const message = requiredToolString(input.message, "message");
     const targetAgent = optionalToolString(input.targetAgent, "targetAgent");
     const targetSessionName = optionalToolString(input.targetSessionName, "targetSessionName");
@@ -292,13 +295,19 @@ export class A2AHttpServer {
     if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || !Number.isSafeInteger(timeoutMs) || timeoutMs <= 0)) {
       throw new Error("timeoutMs must be a positive integer.");
     }
+    const responseForTaskId = optionalToolString(input.responseForTaskId, "responseForTaskId");
     const callbackForTaskId = optionalToolString(input.callbackForTaskId, "callbackForTaskId");
+    if (name === "a2b_send" && (!targetAgent || targetSessionName !== undefined || selector !== undefined || responseForTaskId !== undefined || callbackForTaskId !== undefined)) {
+      throw new Error("a2b_send requires one exact targetAgent ID and does not accept selectors, session titles, or callbacks.");
+    }
     const toolRequest = {
+      interaction: name === "a2b_send" ? "A2B" as const : "A2A" as const,
       ...(targetAgent ? { targetAgent } : {}),
       ...(targetSessionName ? { targetSessionName } : {}),
       ...(selector ? { selector } : {}),
       message,
       ...(typeof timeoutMs === "number" ? { timeoutMs } : {}),
+      ...(responseForTaskId ? { responseForTaskId } : {}),
       ...(callbackForTaskId ? { callbackForTaskId } : {}),
     };
     const result = nativeSessionSource && nativeSessionId

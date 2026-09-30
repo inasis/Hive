@@ -52,15 +52,18 @@ export type BridgeEventHandlerDependencies = {
 
 export function applyConversationBridgeEvent(event: UiBridgeEvent, dependencies: BridgeEventHandlerDependencies): void {
   const { context, setters, refs, actions } = dependencies;
-  if (!("target" in event) || event.target !== context.connectedTarget) return;
+  if (event.type.startsWith("transport")) return;
+  const currentTarget = event.target === context.connectedTarget;
+  if (!currentTarget && !event.target.startsWith("daemon:")) return;
   const eventProvider = event.provider ?? refs.runtime.activeProvider();
   const isActiveThread = refs.runtime.isThreadSelected(event.target, eventProvider, event.threadId);
 
   if (event.type === "approvalRequested") {
-    setters.setApproval({ ...event.approval, requestId: event.requestId, provider: eventProvider });
+    setters.setApproval({ ...event.approval, requestId: event.requestId, provider: eventProvider, target: event.target, threadId: event.threadId });
     return;
   }
   if (event.type === "threadCreated") {
+    if (!currentTarget) return;
     setters.setThreads((current) => upsertProviderThreads(current, [{
       id: event.threadId,
       provider: eventProvider,
@@ -72,7 +75,7 @@ export function applyConversationBridgeEvent(event: UiBridgeEvent, dependencies:
     return;
   }
   if (event.type === "threadRenamed") {
-    setters.setThreads((current) => current.map((thread) => thread.provider === eventProvider && thread.id === event.threadId ? { ...thread, title: event.title } : thread));
+    if (currentTarget) setters.setThreads((current) => current.map((thread) => thread.provider === eventProvider && thread.id === event.threadId ? { ...thread, title: event.title } : thread));
     refs.threadViews.current.update(event.target, eventProvider, event.threadId, (view) => ({ ...view, title: event.title }));
     if (isActiveThread) setters.setActiveTitle(event.title);
     return;
@@ -82,7 +85,7 @@ export function applyConversationBridgeEvent(event: UiBridgeEvent, dependencies:
     refs.threadViews.current.delete(event.target, eventProvider, deletedThreadId);
     void hiveTranscriptCache.delete(event.target, eventProvider, deletedThreadId);
     refs.runtime.clearThread(event.target, eventProvider, deletedThreadId);
-    setters.setThreads((current) => current.filter((thread) => thread.provider !== eventProvider || thread.id !== deletedThreadId));
+    if (currentTarget) setters.setThreads((current) => current.filter((thread) => thread.provider !== eventProvider || thread.id !== deletedThreadId));
     setters.setSideChats((current) => current.filter((chat) => chat.target !== event.target || chat.provider !== eventProvider || (chat.threadId !== deletedThreadId && chat.rootThreadId !== deletedThreadId)));
     actions.clearThreadDeltas(event.target, eventProvider, deletedThreadId);
     return;
@@ -131,7 +134,7 @@ export function applyConversationBridgeEvent(event: UiBridgeEvent, dependencies:
     return;
   }
 
-  if (event.provider && event.provider !== refs.runtime.activeProvider()) return;
+  if (event.provider && event.provider !== refs.runtime.activeProvider() && currentTarget) return;
   if (event.type === "threadSettingsUpdated") {
     const settings = event.settings;
     const view = refs.threadViews.current.get(event.target, eventProvider, event.threadId);
@@ -153,7 +156,7 @@ export function applyConversationBridgeEvent(event: UiBridgeEvent, dependencies:
         setters.setCurrentModeId(currentModeId);
       }
     }
-    if (settings.supportedReasoningEfforts) {
+    if (currentTarget && settings.supportedReasoningEfforts) {
       setters.setProviderCatalogs((current) => {
         const catalog = current[eventProvider];
         if (!catalog) return current;

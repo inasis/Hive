@@ -15,7 +15,11 @@ export type ProviderCreateThreadInput = {
   permissionPresets?: string[];
 };
 
-export type ProviderOpenThreadOptions = { includeTranscript: boolean; minimal?: boolean };
+export type ProviderOpenThreadOptions = {
+  includeTranscript: boolean;
+  /** Return compact metadata for internal work; avoid interactive resume/focus changes when the provider allows it. */
+  minimal?: boolean;
+};
 
 export type ProviderOpenThreadResult = {
   target: string;

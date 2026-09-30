@@ -3,13 +3,18 @@ import { test } from "node:test";
 import { HiveSessionAgentAdapter, encodeHiveSessionAddress } from "../dist/adapters/providers/hive-session-agent.js";
 import { A2AHttpServer } from "../dist/adapters/transport/a2a-http-server.js";
 import { injectHiveA2AMcpServer } from "../dist/adapters/providers/opencode/a2a-mcp-config.js";
+import { createKiroA2AMcpServers } from "../dist/adapters/providers/kiro/a2a-mcp-server.js";
 import { InMemoryA2ARuntimeStateStore } from "../dist/adapters/persistence/a2a-runtime-state.js";
 import { InMemoryA2AWorkspaceLockManager } from "../dist/adapters/workspace/a2a-locks.js";
 import { A2ARuntime } from "../dist/application/use-cases/a2a-runtime.js";
 import { ConfiguredCliAgentAdapter } from "../dist/adapters/providers/configured-cli-agent.js";
 import { CodexAppServerApi } from "../dist/adapters/providers/codex/app-server.js";
 import { CodexSessionCatalogAdapter } from "../dist/adapters/providers/codex/session-catalog.js";
+import { CodexSessionTurnAdapter } from "../dist/adapters/providers/codex/session-turns.js";
 import { codexAppServerArgs } from "../dist/adapters/transport/codex-process-transport.js";
+import { OpenCodeTurnAdapter } from "../dist/adapters/providers/opencode/session-turns.js";
+import { KiroSessionTurnAdapter } from "../dist/adapters/providers/kiro/session-turns.js";
+import { providerPromptTranscript } from "../dist/adapters/providers/a2a-prompt-context.js";
 import { isA2ARuntimeSnapshot } from "../dist/domain/a2a.js";
 
 test("Hive A2A task runs in a fresh provider thread and carries no old chat context", async () => {
@@ -60,8 +65,10 @@ test("Hive A2A task runs in a fresh provider thread and carries no old chat cont
       }
       assert.equal(options.includeTranscript, false);
       assert.equal(options.minimal, true);
-      assert.deepEqual({ target, threadId }, owner);
-      return currentView;
+      assert.equal(target, owner.target);
+      if (threadId === owner.threadId) return currentView;
+      if (threadId === "a2a-temp-thread") return createdView;
+      assert.fail(`unexpected thread inspection: ${threadId}`);
     },
     async createThread(target, input) {
       assert.equal(target, owner.target);
@@ -81,18 +88,24 @@ test("Hive A2A task runs in a fresh provider thread and carries no old chat cont
       assert.equal(target, owner.target);
       assert.equal(threadId, "a2a-temp-thread");
       submittedPrompt = prompt;
+      const taskId = prompt.a2aCommunications[0].taskId;
+      const turnId = `turn-${taskId}`;
       assert.equal(adapter.matchesNativeSession(session, threadId), true);
-      assert.equal(adapter.getActiveTaskIdForSession(session, threadId), "task-1");
+      assert.equal(adapter.getActiveTaskIdForSession(session, threadId), taskId);
       assert.equal(adapter.getActiveTaskIdForSession(session, owner.threadId), undefined);
       assert.equal(await adapter.isBusy(session), true);
+      assert.deepEqual(await adapter.getPermissionProfile(session, { taskId, targetAgent: "worker" }), {
+        provider: "codex",
+        profile: "unrestricted",
+      }, "permission lookup follows the active ephemeral task thread instead of reopening its owner");
       const discovered = await adapter.discoverSessions();
       assert.equal(discovered.some((candidate) => candidate.sessionId === encodeHiveSessionAddress({ target, threadId })), false);
       for (const handler of handlers) {
-        handler({ type: "turnStarted", provider: "codex", target, threadId, turnId: "turn-1" });
-        handler({ type: "assistantMessageCompleted", provider: "codex", target, threadId, turnId: "turn-1", messageId: "message-1", text: "A2A result" });
-        handler({ type: "turnCompleted", provider: "codex", target, threadId, turnId: "turn-1", status: "completed" });
+        handler({ type: "turnStarted", provider: "codex", target, threadId, turnId });
+        handler({ type: "assistantMessageCompleted", provider: "codex", target, threadId, turnId, messageId: `message-${taskId}`, text: "A2A result" });
+        handler({ type: "turnCompleted", provider: "codex", target, threadId, turnId, status: "completed" });
       }
-      return { accepted: true, turnId: "turn-1" };
+      return { accepted: true, turnId };
     },
     async interruptTurn() { return { interrupted: true }; },
   };
@@ -130,8 +143,14 @@ test("Hive A2A task runs in a fresh provider thread and carries no old chat cont
     message: "Inspect the current module and fix its parser.",
   }, {
     signal: new AbortController().signal,
-    history: [{ role: "user", message: "OLD PRIVATE HISTORY" }],
-    agents: [{ agentId: "other-agent", sessionName: "Other private session" }],
+    history: Array.from({ length: 100 }, (_, index) => ({
+      role: "user",
+      message: `OLD PRIVATE HISTORY ${index} `.repeat(100),
+    })),
+    agents: Array.from({ length: 100 }, (_, index) => ({
+      agentId: `other-agent-${index}`,
+      sessionName: `Other private session ${index}`,
+    })),
     async delegate() { throw new Error("unused"); },
   });
 
@@ -141,18 +160,85 @@ test("Hive A2A task runs in a fresh provider thread and carries no old chat cont
   assert.equal(submittedPrompt.text, "");
   assert.match(submittedPrompt.a2aCommunications[0].message, /Inspect the current module and fix its parser/);
   assert.doesNotMatch(submittedPrompt.a2aCommunications[0].message, /OLD PRIVATE HISTORY|Other private session/);
+  assert.ok(Buffer.byteLength(submittedPrompt.a2aCommunications[0].message, "utf8") < 1_000,
+    "task prompt size stays bounded by the request instead of inheriting old history or the room roster");
   assert.deepEqual(settingUpdates, [{
     threadId: "a2a-temp-thread",
     settings: { model: "model-current", effort: "high", permissionProfile: "workspace-only", modeId: "plan" },
   }]);
   assert.deepEqual(deleted, ["a2a-temp-thread"]);
-  assert.deepEqual(openedThreads, ["user-thread"], "providers that preserve focus should not reopen the original thread after cleanup");
+  assert.deepEqual(openedThreads, ["user-thread", "a2a-temp-thread"], "permission lookup reads the active task thread and cleanup does not reopen the original");
   assert.equal(emitted.some((event) => event.type === "a2aCommunicationSummary" && event.threadId === owner.threadId), true);
   assert.equal(emitted.some((event) => event.type === "a2aCommunicationSummary" && event.responseTurnId), false);
   assert.deepEqual(emitted.filter((event) => event.type === "a2aCommunicationSummary").map((event) => event.communications[0].kind), ["request", "result"]);
-  assert.match(submittedPrompt.a2aCommunications[0].message, /a2a_wait_task/);
-  assert.match(submittedPrompt.a2aCommunications[0].message, /current Hive agent ID is worker/);
-  assert.doesNotMatch(submittedPrompt.a2aCommunications[0].message, /callbackForTaskId/);
+  assert.doesNotMatch(submittedPrompt.a2aCommunications[0].message, /a2a_wait_task/i);
+  assert.match(submittedPrompt.a2aCommunications[0].message, /sends are async, do not wait or poll for results/);
+  assert.match(submittedPrompt.a2aCommunications[0].message, /callerAgentId=worker/);
+  assert.match(submittedPrompt.a2aCommunications[0].message, /answer and deliver it with a2a_send to a chosen existing\/new agent using responseForTaskId=task-1/);
+  assert.match(submittedPrompt.a2aCommunications[0].message, /Accepted delivery succeeds; finish without waiting/);
+  assert.match(submittedPrompt.a2aCommunications[0].message, /callbackForTaskId=task-1/);
+
+  await adapter.resume(session, {
+    task: {
+      taskId: "callback-task",
+      targetAgent: "worker",
+      sourceAgent: "responder",
+      depth: 0,
+      maxDepth: 4,
+      visitedAgents: [],
+      metadata: { delivery: "a2a-result-callback", callbackForTaskId: "original-task" },
+    },
+    message: "Original request: inspect parser. Result: malformed input accepted.",
+  }, {
+    signal: new AbortController().signal,
+    history: [],
+    agents: [],
+    async delegate() { throw new Error("unused"); },
+  });
+  assert.match(submittedPrompt.a2aCommunications[0].message, /forward with responseForTaskId=callback-task or finish/);
+  assert.match(submittedPrompt.a2aCommunications[0].message, /do not send another callback/i);
+  assert.match(submittedPrompt.a2aCommunications[0].message, /Do not wait for accepted sends/);
+
+  await adapter.resume(session, {
+    task: {
+      taskId: "response-task",
+      targetAgent: "worker",
+      sourceAgent: "responder",
+      depth: 1,
+      maxDepth: 4,
+      visitedAgents: ["worker"],
+      metadata: { delivery: "a2a-result-delivery", responseForTaskId: "original-task" },
+    },
+    message: "A2A result: malformed input is accepted.",
+  }, {
+    signal: new AbortController().signal,
+    history: [],
+    agents: [],
+    async delegate() { throw new Error("unused"); },
+  });
+  assert.match(submittedPrompt.a2aCommunications[0].message, /A2A response from responder for task original-task/);
+  assert.match(submittedPrompt.a2aCommunications[0].message, /forward with responseForTaskId=response-task, return to sender with callbackForTaskId=response-task, or finish/);
+
+  await adapter.resume(session, {
+    task: {
+      taskId: "bonded-task",
+      targetAgent: "worker",
+      sourceAgent: "bonded-caller",
+      depth: 0,
+      maxDepth: 4,
+      visitedAgents: [],
+      metadata: { delivery: "a2b-bonded-request" },
+    },
+    message: "Summarize the parser behavior.",
+  }, {
+    signal: new AbortController().signal,
+    history: [],
+    agents: [],
+    async delegate() { throw new Error("unused"); },
+  });
+  assert.match(submittedPrompt.a2aCommunications[0].message, /Bonded A2B from bonded-caller: answer directly; do not delegate/);
+  assert.match(submittedPrompt.a2aCommunications[0].message, /callbackForTaskId=bonded-task/);
+  assert.doesNotMatch(submittedPrompt.a2aCommunications[0].message, /responseForTaskId=bonded-task|a2a_wait_task/i);
 
   failNextOpenThread = true;
   await assert.rejects(() => adapter.resume(session, {
@@ -178,7 +264,7 @@ test("Hive A2A task runs in a fresh provider thread and carries no old chat cont
   });
 });
 
-test("native A2A requests return nested agent results and release workspace locks while waiting", async () => {
+test("legacy direct wait releases workspace locks while a parent explicitly waits", async () => {
   const stateStore = new InMemoryA2ARuntimeStateStore();
   const summaries = [];
   const sessionAgentIds = new Map();
@@ -210,7 +296,15 @@ test("native A2A requests return nested agent results and release workspace lock
     async resume(session, input) {
       const agentId = sessionAgentIds.get(session.sessionId);
       assert.ok(agentId);
+      if (input.task.metadata?.delivery === "a2a-result-callback" || input.task.metadata?.delivery === "a2a-result-delivery") {
+        return { taskId: input.task.taskId, agentId, status: "COMPLETED", message: "The response recipient chose to finish." };
+      }
       if (agentId === "caller") {
+        await runtime.sendFromAgent(agentId, {
+          targetAgent: "agent-2",
+          callbackForTaskId: input.task.taskId,
+          message: "차표",
+        });
         return { taskId: input.task.taskId, agentId, status: "COMPLETED", message: "차표" };
       }
       const targetAgent = agentId === "agent-1" ? "agent-2" : "caller";
@@ -221,6 +315,19 @@ test("native A2A requests return nested agent results and release workspace lock
       const childResult = await runtime.waitForTask(child.task.taskId, 5_000);
       assert.equal(childResult.completed, true);
       assert.equal(childResult.state, "COMPLETED");
+      if (agentId === "agent-2") {
+        await runtime.sendFromAgent(agentId, {
+          targetAgent: "agent-1",
+          callbackForTaskId: input.task.taskId,
+          message: childResult.result.message,
+        });
+      } else if (agentId === "agent-1" && input.task.metadata?.delivery === "a2a-async-request") {
+        await runtime.sendFromAgent(agentId, {
+          targetAgent: "caller",
+          callbackForTaskId: input.task.taskId,
+          message: childResult.result.message,
+        });
+      }
       return { taskId: input.task.taskId, agentId, status: "COMPLETED", message: `다음 단어: ${childResult.result.message}` };
     },
     async execute() { throw new Error("unexpected execute"); },
@@ -294,6 +401,8 @@ test("MCP source lookup uses the active A2A task when provider session detection
   let releaseTask;
   const taskStarted = new Promise((resolve) => { markTaskStarted = resolve; });
   const blockedTask = new Promise((resolve) => { releaseTask = resolve; });
+  let runtime;
+  let callbackTask;
   const adapter = {
     adapterId: "active-source-test",
     provider: "codex",
@@ -319,16 +428,26 @@ test("MCP source lookup uses the active A2A task when provider session detection
     matchesNativeTarget(_session, target) { return target === "local"; },
     async isBusy() { return false; },
     async resume(session, input) {
+      if (input.task.metadata?.delivery === "a2a-result-callback" || input.task.metadata?.delivery === "a2a-result-delivery") {
+        return { taskId: input.task.taskId, agentId: input.task.targetAgent, status: "COMPLETED", message: "The response recipient chose to finish." };
+      }
       if (session.sessionName === "active-caller") {
         markTaskStarted();
         await blockedTask;
+      }
+      if (session.sessionName === "worker" && input.task.metadata?.delivery === "a2a-async-request") {
+        callbackTask = await runtime.sendFromAgent("worker", {
+          targetAgent: "active-caller",
+          callbackForTaskId: input.task.taskId,
+          message: "Worker result.",
+        });
       }
       return { taskId: input.task.taskId, agentId: input.task.targetAgent, status: "COMPLETED", message: session.sessionName };
     },
     async execute() { throw new Error("unexpected execute"); },
     async cancel() {},
   };
-  const runtime = new A2ARuntime({
+  runtime = new A2ARuntime({
     adapters: [adapter],
     stateStore: new InMemoryA2ARuntimeStateStore(),
     workspaceLocks: new InMemoryA2AWorkspaceLockManager(),
@@ -363,6 +482,8 @@ test("MCP source lookup uses the active A2A task when provider session detection
   assert.equal(graph[1].task.parentTaskId, root.task.taskId);
   const childResult = await runtime.waitForTask(graph[1].task.taskId, 5_000);
   assert.equal(childResult.state, "COMPLETED", JSON.stringify(childResult));
+  assert.ok(callbackTask);
+  assert.equal((await runtime.waitForTask(callbackTask.task.taskId, 5_000)).state, "COMPLETED");
 });
 
 test("session discovery uses a room TTL and joins concurrent refreshes", async () => {
@@ -471,6 +592,42 @@ test("Codex A2A thread creation preserves the registered thread focus", async ()
   assert.deepEqual(deleted, ["a2a-task-thread"]);
 });
 
+test("Codex minimal session inspection reads metadata without resuming an active writer", async () => {
+  const session = {
+    activeThreadId: "another-focused-thread",
+    openedThreadIds: new Set(),
+    freshThreadIds: new Set(),
+    skillsByThread: new Map(),
+    settingsByThread: new Map([["locked-thread", {
+      model: "cached-model",
+      effort: "medium",
+      permissionProfile: "workspace-only",
+      collaborationMode: "plan",
+    }]]),
+    models: [{ model: "default-model", displayName: "Default", description: "", defaultReasoningEffort: "", supportedReasoningEfforts: [], isDefault: true, hidden: false }],
+    async unsubscribe() {},
+    api: {
+      async readThreadMetadata(threadId) {
+        assert.equal(threadId, "locked-thread");
+        return { thread: { id: threadId, name: "Locked session", cwd: "/project", model: "metadata-model", reasoningEffort: "high" } };
+      },
+      async resumeThread() { throw new Error("thread already has an active writer"); },
+    },
+  };
+  const adapter = new CodexSessionCatalogAdapter({ async getOrConnect() { return session; } });
+
+  const view = await adapter.openThread("local", "locked-thread", { includeTranscript: false, minimal: true });
+
+  assert.equal(view.cwd, "/project");
+  assert.equal(view.model, "metadata-model");
+  assert.equal(view.reasoningEffort, "high");
+  assert.equal(view.permissionProfile, "workspace-only");
+  assert.equal(view.currentModeId, "plan");
+  assert.deepEqual(view.entries, []);
+  assert.equal(session.activeThreadId, "another-focused-thread");
+  assert.equal(session.openedThreadIds.has("locked-thread"), false);
+});
+
 test("Codex app-server sends ephemeral only when requested", async () => {
   const requests = [];
   const api = new CodexAppServerApi({
@@ -514,9 +671,11 @@ test("Codex app-server receives the authenticated Hive A2A MCP configuration", (
 
 test("MCP a2a_send acknowledgement omits the full task and request", async () => {
   const longMessage = "private delegated request ".repeat(100);
+  let submittedInput;
   const runtime = {
     async resolveActiveAgentForTarget() { return { agentId: "caller" }; },
-    async sendFromAgent() {
+    async sendFromAgent(_agentId, input) {
+      submittedInput = input;
       return { task: { taskId: "task-accepted", message: longMessage }, state: "QUEUED" };
     },
   };
@@ -526,13 +685,15 @@ test("MCP a2a_send acknowledgement omits the full task and request", async () =>
     bearerToken: "x".repeat(32),
   });
   const result = await server.callMcpTool(
-    { name: "a2a_send", arguments: { targetAgent: "worker", message: longMessage } },
+    { name: "a2a_send", arguments: { targetAgent: "worker", message: longMessage, responseForTaskId: "task-origin" } },
     new URL("http://localhost/mcp?provider=codex&target=local"),
     { headers: {} },
   );
   const text = result.content[0].text;
   assert.deepEqual(JSON.parse(text), { accepted: true, taskId: "task-accepted", state: "QUEUED" });
   assert.equal(text.includes(longMessage), false);
+  assert.ok(Buffer.byteLength(text, "utf8") < 256, "acknowledgement remains small even for a long request");
+  assert.equal(submittedInput.responseForTaskId, "task-origin");
 });
 
 test("MCP falls back to the unique active provider session when client session metadata is unmapped", async () => {
@@ -644,7 +805,7 @@ test("MCP a2a_wait_task returns the completed result without exposing the stored
   });
 });
 
-test("MCP tools/list advertises the complete asynchronous A2A tool set", async () => {
+test("MCP tools/list advertises asynchronous A2A and A2B tools without a wait tool", async () => {
   const server = new A2AHttpServer({}, {
     host: "127.0.0.1",
     port: 0,
@@ -664,15 +825,20 @@ test("MCP tools/list advertises the complete asynchronous A2A tool set", async (
     });
     assert.equal(response.status, 200);
     const packet = await response.json();
-    assert.deepEqual(packet.result.tools.map((tool) => tool.name), ["a2a_list_agents", "a2a_send", "a2a_wait_task"]);
+    assert.deepEqual(packet.result.tools.map((tool) => tool.name), ["a2a_list_agents", "a2a_send", "a2b_send"]);
     assert.equal(packet.result.tools.find((tool) => tool.name === "a2a_list_agents").inputSchema.properties.callerAgentId.type, "string");
     assert.equal(packet.result.tools.find((tool) => tool.name === "a2a_send").inputSchema.properties.callerAgentId.type, "string");
+    assert.equal(packet.result.tools.find((tool) => tool.name === "a2a_send").inputSchema.properties.responseForTaskId.type, "string");
+    assert.match(packet.result.tools.find((tool) => tool.name === "a2a_send").description, /Acceptance confirms delivery, not completion/);
+    assert.match(packet.result.tools.find((tool) => tool.name === "a2a_send").description, /forward, return once to the sender with callbackForTaskId, or finish/);
+    assert.match(packet.result.tools.find((tool) => tool.name === "a2a_send").description, /cannot callback again/);
+    assert.match(packet.result.tools.find((tool) => tool.name === "a2a_send").description, /Do not wait or poll/);
   } finally {
     await server.close();
   }
 });
 
-test("OpenCode grants the wait tool required to collect asynchronous A2A results", () => {
+test("OpenCode grants only the asynchronous A2A and A2B tools", () => {
   const environment = {
     OPENCODE_CONFIG_CONTENT: JSON.stringify({
       mcp: { servers: { existing: { type: "local", command: "agent" } } },
@@ -687,10 +853,72 @@ test("OpenCode grants the wait tool required to collect asynchronous A2A results
     config.permissions.filter((permission) => permission.action.startsWith("hivea2a_")),
     [
       { action: "hivea2a_a2a_send", resource: "*", effect: "allow" },
+      { action: "hivea2a_a2b_send", resource: "*", effect: "allow" },
       { action: "hivea2a_a2a_list_agents", resource: "*", effect: "allow" },
-      { action: "hivea2a_a2a_wait_task", resource: "*", effect: "allow" },
     ],
   );
+});
+
+test("Kiro receives an authenticated Hive A2A MCP descriptor for its local session", () => {
+  const savedEnvironment = Object.fromEntries(["HIVE_A2A_HTTP_ENABLED", "HIVE_A2A_HTTP_TOKEN", "HIVE_A2A_MCP_URL"]
+    .map((name) => [name, process.env[name]]));
+  try {
+    process.env.HIVE_A2A_HTTP_ENABLED = "true";
+    process.env.HIVE_A2A_HTTP_TOKEN = "x".repeat(32);
+    process.env.HIVE_A2A_MCP_URL = "http://127.0.0.1:4760/mcp";
+    const [server] = createKiroA2AMcpServers("hive-local://");
+    assert.equal(server.name, "hive-a2a");
+    const environment = Object.fromEntries(server.env.map(({ name, value }) => [name, value]));
+    assert.equal(environment.HIVE_A2A_MCP_URL, "http://127.0.0.1:4760/mcp?provider=kiro&target=hive-local%3A%2F%2F");
+    assert.equal(environment.HIVE_A2A_HTTP_TOKEN, "x".repeat(32));
+    assert.equal(environment.HIVE_A2A_PROVIDER, "kiro");
+    assert.equal(environment.HIVE_A2A_TARGET, "hive-local://");
+  } finally {
+    for (const [name, value] of Object.entries(savedEnvironment)) restoreEnvironmentValue(name, value);
+  }
+});
+
+test("Codex, OpenCode, and Kiro turn adapters submit A2A-only internal context", async () => {
+  const communication = {
+    kind: "request",
+    taskId: "task-provider-prompt",
+    sourceAgentId: "source-agent",
+    message: "Inspect only the current parser request.",
+  };
+  const prompts = {};
+
+  const codexSession = {
+    openedThreadIds: new Set(["task-thread"]),
+    skillsByThread: new Map(),
+    api: { async startTurn(_threadId, prompt) { prompts.codex = prompt; return { turn: { id: "codex-turn" } }; } },
+  };
+  const codex = new CodexSessionTurnAdapter({ async getOrConnect() { return codexSession; } });
+  await codex.sendPrompt("hive-local://", "task-thread", { text: "", a2aCommunications: [communication] });
+
+  const openCodeSession = {
+    openedThreadIds: new Set(["task-thread"]),
+    settingsByThread: new Map([["task-thread", { model: "model" }]]),
+    connection: { async sendPrompt(_target, _threadId, prompt) { prompts.opencode = prompt; return "opencode-turn"; } },
+  };
+  const openCode = new OpenCodeTurnAdapter({ require() { return openCodeSession; } }, () => {});
+  await openCode.sendPrompt("hive-local://", "task-thread", { text: "", a2aCommunications: [communication] });
+
+  const kiroSession = {
+    openedThreadIds: new Set(["task-thread"]),
+    settingsByThread: new Map([["task-thread", { model: "model", effort: null }]]),
+    activeTurnIds: new Map(),
+    transcriptsByThread: new Map(),
+    toolFailuresByThread: new Map(),
+    connection: { startPrompt(_threadId, content) { prompts.kiro = content[0].text; } },
+  };
+  const kiro = new KiroSessionTurnAdapter({}, async () => kiroSession, () => {});
+  await kiro.sendPrompt("hive-local://", "task-thread", { text: "", a2aCommunications: [communication] });
+
+  for (const [provider, prompt] of Object.entries(prompts)) {
+    const decoded = providerPromptTranscript(prompt);
+    assert.equal(decoded.text, "", `${provider} keeps internal A2A context out of user-authored text`);
+    assert.deepEqual(decoded.communications, [communication], `${provider} delivers the current request through Hive's internal summary`);
+  }
 });
 
 test("configured CLI agents receive no prior A2A history or room roster", async () => {
@@ -735,6 +963,65 @@ test("configured CLI agents receive no prior A2A history or room roster", async 
   assert.deepEqual(payload.history, []);
   assert.match(payload.message, /Inspect the parser/);
   assert.doesNotMatch(payload.message, /OLD PRIVATE HISTORY|Other private session/);
+});
+
+test("configured CLI delegation preserves A2A response delivery and bonded A2B rules", async () => {
+  async function run(task, delegation) {
+    const script = [
+      'let input="";',
+      'process.stdin.setEncoding("utf8");',
+      'process.stdin.on("data", chunk => input += chunk);',
+      `process.stdin.on("end", () => { const payload = JSON.parse(input); process.stdout.write(JSON.stringify({ message: payload.message, delegations: ${JSON.stringify([delegation])} })); });`,
+    ].join("");
+    const adapter = new ConfiguredCliAgentAdapter({
+      adapterId: "cli-delegation-test",
+      provider: "custom",
+      command: process.execPath,
+      args: ["-e", script],
+      sessions: [{ sessionId: "cli-session", persistenceLevel: 0, runtimeManagedHistory: false }],
+      promptDelivery: "stdin",
+      stdinFormat: "json",
+      outputFormat: "json",
+      delegation: { maxCallsPerTask: 1 },
+      capabilities: { toolCalling: true, fileAccess: true, shellAccess: true },
+      integrationStatus: "VERIFIED",
+      evidence: { source: "official-cli", verifiedAt: "2026-09-29", confidence: "high", limitations: [] },
+    });
+    let delegated;
+    const result = await adapter.execute({
+      sessionId: "cli-session",
+      provider: "custom",
+      persistenceLevel: 0,
+      runtimeManagedHistory: false,
+    }, task, {
+      signal: new AbortController().signal,
+      history: [{ role: "user", message: "OLD PRIVATE HISTORY" }],
+      agents: [{ agentId: "private-agent", sessionName: "Private room roster" }],
+      async delegate(request) { delegated = request; return { task: { taskId: "accepted" } }; },
+    });
+    return { prompt: result.message, delegated };
+  }
+
+  const a2a = await run({
+    taskId: "cli-a2a-task", rootTaskId: "cli-a2a-task", roomId: "room", sourceAgent: "caller", targetAgent: "cli-agent",
+    type: "REQUEST", message: "Inspect only this module.", depth: 0, maxDepth: 4, timeoutMs: 5_000, createdAt: 1,
+    visitedAgents: ["cli-agent"], metadata: { delivery: "a2a-async-request" },
+  }, {
+    targetSessionName: "Result reviewer", message: "The parser rejects malformed input.", responseForTaskId: "cli-a2a-task",
+  });
+  assert.equal(a2a.delegated.responseForTaskId, "cli-a2a-task");
+  assert.match(a2a.prompt, /deliver your answer in an async delegation with responseForTaskId=cli-a2a-task/);
+  assert.match(a2a.prompt, /Accepted delivery is success; do not wait for the recipient/);
+  assert.doesNotMatch(a2a.prompt, /OLD PRIVATE HISTORY|Private room roster/);
+
+  const a2b = await run({
+    taskId: "cli-bonded-task", rootTaskId: "cli-bonded-task", roomId: "room", sourceAgent: "caller", targetAgent: "bonded-agent",
+    type: "REQUEST", message: "Answer this directly.", depth: 0, maxDepth: 4, timeoutMs: 5_000, createdAt: 2,
+    visitedAgents: ["bonded-agent"], metadata: { delivery: "a2b-bonded-request" },
+  }, { targetAgent: "caller", message: "The answer is 42.", callbackForTaskId: "cli-bonded-task" });
+  assert.equal(a2b.delegated.callbackForTaskId, "cli-bonded-task");
+  assert.match(a2b.prompt, /Bonded A2B: answer directly as this agent; do not delegate/);
+  assert.match(a2b.prompt, /callbackForTaskId=cli-bonded-task/);
 });
 
 function restoreEnvironmentValue(name, value) {
