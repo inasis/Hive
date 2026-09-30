@@ -1,5 +1,5 @@
 import { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
-import { dispatchDaemonRequest, startConfiguredA2AHttpServer, stopA2AHttpServer, subscribeDaemonEvents } from "../../../../src/composition/daemon.js";
+import { dispatchDaemonRequest, subscribeDaemonEvents } from "../../../../src/composition/daemon.js";
 import type { DaemonApiMethod, DaemonApiRequestMap, DaemonApiResponseMap } from "../../../../src/interfaces/contracts/daemon-api.js";
 import type { BridgeEvent, GtkSettings, HiveBridgeSchema } from "../shared/bridge.js";
 import { PinnedDaemonClient, type DaemonCredentials } from "./daemon-client.js";
@@ -155,9 +155,6 @@ const requestHandlers: NonNullable<BunRpcConfig["handlers"]["requests"]> = {
 
 const rpc = BrowserView.defineRPC<HiveBridgeSchema>({ handlers: { requests: requestHandlers, messages: {} } });
 subscribeDaemonEvents((event) => rpc.send.event(event));
-await startConfiguredA2AHttpServer();
-process.once("SIGINT", () => { void stopA2AHttpServer(); });
-process.once("SIGTERM", () => { void stopA2AHttpServer(); });
 
 mainWindow = new BrowserWindow({
   title: "Hive",
@@ -169,6 +166,7 @@ mainWindow = new BrowserWindow({
   titleBarStyle: "hidden",
   rpc,
 });
+
 
 function publishBridgeEvent(event: BridgeEvent): void {
   rpc.send.event(event);

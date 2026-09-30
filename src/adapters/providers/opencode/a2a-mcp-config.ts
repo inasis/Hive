@@ -45,8 +45,8 @@ export function injectHiveA2AMcpServer(environment: NodeJS.ProcessEnv, url: stri
   config.permissions = [
     ...((existingPermissions as unknown[] | undefined) ?? []),
     { action: "hivea2a_a2a_send", resource: "*", effect: "allow" },
+    { action: "hivea2a_a2b_send", resource: "*", effect: "allow" },
     { action: "hivea2a_a2a_list_agents", resource: "*", effect: "allow" },
-    { action: "hivea2a_a2a_wait_task", resource: "*", effect: "allow" },
   ];
   environment.OPENCODE_CONFIG_CONTENT = JSON.stringify(config);
 }

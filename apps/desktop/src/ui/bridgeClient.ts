@@ -217,7 +217,7 @@ export const bridgeRpc = new Proxy(nativeRpc, {
             return { ...object, provider: object.provider ?? activeAssistantProvider };
           };
           const nativeDesktopDaemon = !isMobileApp && isDaemonClient;
-          if (nativeDesktopDaemon && ["windowAction", "getHostPlatform", "getGtkSettings", "getWindowFrame", "setWindowFrame", "daemonConnect", "daemonRequest", "daemonDisconnect"].includes(method)) {
+          if (nativeDesktopDaemon && ["windowAction", "getHostPlatform", "getGtkSettings", "getWindowFrame", "setWindowFrame", "daemonConnect", "daemonRequest", "daemonDisconnect", "chooseWorkspaceFolder"].includes(method)) {
             return Reflect.get(requests, method);
           }
           if (!isMobileApp && !nativeDesktopDaemon) {

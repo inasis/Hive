@@ -1,11 +1,10 @@
-import type { PendingA2ACommunication } from "../../application/ports/a2a-prompt-inbox.js";
 import { a2aCommunicationGroupKey, type A2ACommunicationSummaryItem } from "../../domain/a2a.js";
 
 const SUMMARY_START = "<hive-internal-a2a-summary-v1>";
 const SUMMARY_END = "</hive-internal-a2a-summary-v1>";
 
 /** Append queued agent messages as one internal context block after any user-authored text. */
-export function appendA2ACommunicationSummary(text: string, communications?: PendingA2ACommunication[]): string {
+export function appendA2ACommunicationSummary(text: string, communications?: A2ACommunicationSummaryItem[]): string {
   if (!communications?.length) return text;
   const payload = JSON.stringify({
     communications: communications.map(({ kind, taskId, sourceAgentId, sourceSessionName, message }) => ({
@@ -70,7 +69,7 @@ export function providerA2ASummaryEntryId(communications: readonly A2ACommunicat
   return `a2a-summary:${a2aCommunicationGroupKey(communications)}`;
 }
 
-export function hasA2ACommunicationSummary(communications?: PendingA2ACommunication[]): boolean {
+export function hasA2ACommunicationSummary(communications?: A2ACommunicationSummaryItem[]): boolean {
   return Boolean(communications?.length);
 }
 

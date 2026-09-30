@@ -19,10 +19,10 @@ import {
   type NativeSession,
   type RoutingPolicy,
   type TaskState,
+  type A2ACommunicationSummaryItem,
 } from "../../domain/a2a.js";
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
-import type { AssistantEvent, AssistantEventPublisher } from "../ports/events.js";
-import type { A2ACommunicationClaim, A2APromptInboxPort, PendingA2ACommunication } from "../ports/a2a-prompt-inbox.js";
+import type { AssistantEventPublisher } from "../ports/events.js";
 import type {
   A2ARuntimeEvent,
   A2ARuntimeEventHandler,
@@ -102,16 +102,13 @@ type ResolvedNativeCallerTarget = Pick<A2ATaskSubmission, "targetAgent" | "targe
 type ScheduledTask = {
   record: AgentTaskRecord;
   persisted: Promise<void>;
-  completion?: Promise<AgentTaskRecord>;
+  completion: Promise<AgentTaskRecord>;
 };
 
-type PromptClaimState = { agentId: string; provider: string; taskIds: string[]; key: string; observedTurnId?: string };
-type InterpretationBinding = { taskIds: string[]; turnId?: string };
-type PromptTurnCompletion = { turnId?: string; state: "COMPLETED" | "FAILED" | "CANCELLED"; message: string; error?: string };
 const SESSION_DISCOVERY_TTL_MS = 15_000;
 
 /** Coordinates rooms, routing, task lineage, session adapters, and per-session concurrency. */
-export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
+export class A2ARuntime implements A2ARuntimePort {
   private readonly adapters = new Map<string, AgentAdapter>();
   private readonly rooms = new Map<string, AgentRoom>();
   private readonly agents = new Map<string, AgentNode>();
@@ -125,15 +122,9 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
   private readonly waitingTasks = new Map<string, Set<string>>();
   private readonly abortControllers = new Map<string, AbortController>();
   private readonly pendingAsyncRequests = new Map<string, number>();
-  private readonly pendingInterpretations = new Map<string, Set<string>>();
   private readonly taskResultSummaries = new Set<string>();
   private readonly activeTaskWaits = new Map<string, Set<string>>();
-  private readonly promptClaims = new Map<string, PromptClaimState>();
-  private readonly claimedInterpretations = new Map<string, string>();
-  private readonly interpretationBindings = new Map<string, InterpretationBinding[]>();
-  private readonly interpretationText = new Map<string, Map<string, string>>();
-  private readonly earlyPromptCompletions = new Map<string, PromptTurnCompletion[]>();
-  private promptClaimSequence = 0;
+  private readonly callbackReservations = new Set<string>();
   private readonly sessionCreations = new Map<string, Promise<AgentNode>>();
   private readonly sessionDiscoveryInFlight = new Map<string, Promise<DiscoveryResult>>();
   private readonly sessionDiscoveryAt = new Map<string, number>();
@@ -349,205 +340,103 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     const room = [...this.rooms.values()].find((candidate) => candidate.agentIds.includes(agentId));
     if (!room) throw runtimeFault("INVALID_REQUEST", source.provider, "Calling agent is not registered in a room");
     this.validateNativeTargetRequest(input, source.provider);
+    const interaction = input.interaction ?? "A2A";
+    if (interaction !== "A2A" && interaction !== "A2B") {
+      throw runtimeFault("INVALID_REQUEST", source.provider, "interaction must be A2A or A2B");
+    }
     const callbackForTaskId = input.callbackForTaskId;
+    const responseForTaskId = input.responseForTaskId;
+    const bondedParent = parent?.task.metadata?.delivery === "a2b-bonded-request";
+    if (parent?.task.metadata?.delivery === "a2a-result-callback" && callbackForTaskId !== undefined) {
+      throw runtimeFault("PERMISSION_DENIED", source.provider, "An A2A callback recipient may forward its result but cannot send another callback");
+    }
+    if (bondedParent && (interaction !== "A2A" || callbackForTaskId !== parent?.task.taskId || responseForTaskId !== undefined)) {
+      throw runtimeFault("PERMISSION_DENIED", source.provider, "A bonded agent may only send one result callback for its own A2B task");
+    }
+    if (interaction === "A2B") {
+      const target = input.targetAgent ? this.agents.get(input.targetAgent) : undefined;
+      if (!target || !room.agentIds.includes(target.agentId) || input.targetSessionName !== undefined || input.selector !== undefined ||
+          callbackForTaskId !== undefined || responseForTaskId !== undefined) {
+        throw runtimeFault("INVALID_REQUEST", source.provider, "A2B requires one registered targetAgent ID and does not accept selectors or callbacks");
+      }
+    }
+    if (callbackForTaskId !== undefined && responseForTaskId !== undefined) {
+      throw runtimeFault("INVALID_REQUEST", source.provider, "Specify callbackForTaskId or responseForTaskId, not both");
+    }
     let metadata: Record<string, unknown>;
     let targetInput = input;
     if (callbackForTaskId !== undefined) {
       requireNonEmpty(callbackForTaskId, "callbackForTaskId");
       const original = this.tasks.get(callbackForTaskId);
-      if (!original || original.task.metadata?.delivery !== "a2a-async-request" ||
-          original.task.targetAgent !== agentId || original.task.sourceAgent === "orchestrator" ||
+      const delivery = original?.task.metadata?.delivery;
+      const isA2AFlowTask = delivery === "a2a-async-request" || delivery === "a2a-result-delivery" || delivery === "a2a-result-callback";
+      const isA2BRequest = delivery === "a2b-bonded-request";
+      const callbackInSameA2ARoot = isA2AFlowTask && parent?.task.rootTaskId === original?.task.rootTaskId;
+      const callbackForBoundAgent = isA2BRequest && parent?.task.taskId === original?.task.taskId && original?.task.targetAgent === agentId;
+      if (!original || (!callbackInSameA2ARoot && !callbackForBoundAgent) || original.task.sourceAgent === "orchestrator" ||
           original.task.roomId !== room.roomId) {
-        throw runtimeFault("INVALID_REQUEST", source.provider, "callbackForTaskId does not identify an async request assigned to this agent");
+        throw runtimeFault("INVALID_REQUEST", source.provider, "callbackForTaskId does not identify an active request this agent may answer");
       }
-      if (input.targetAgent !== original.task.sourceAgent || input.targetSessionName !== undefined || input.selector !== undefined) {
+      if (input.interaction === "A2B" || input.targetAgent !== original.task.sourceAgent || input.targetSessionName !== undefined || input.selector !== undefined) {
         throw runtimeFault("INVALID_REQUEST", source.provider, "A result callback must target the original calling agent by ID");
       }
-      if ([...this.tasks.values()].some((record) => record.task.metadata?.callbackForTaskId === callbackForTaskId)) {
+      if (this.callbackReservations.has(callbackForTaskId) ||
+          [...this.tasks.values()].some((record) => record.task.metadata?.callbackForTaskId === callbackForTaskId)) {
         throw runtimeFault("INVALID_REQUEST", source.provider, "A result callback was already submitted for this request");
       }
+      this.callbackReservations.add(callbackForTaskId);
       targetInput = {
         ...input,
         targetAgent: original.task.sourceAgent,
         message: ["Original request:", original.task.message, "Result:", input.message].join("\n\n"),
       };
       metadata = { delivery: "a2a-result-callback", callbackForTaskId };
+    } else if (responseForTaskId !== undefined) {
+      requireNonEmpty(responseForTaskId, "responseForTaskId");
+      const original = this.tasks.get(responseForTaskId);
+      const delivery = original?.task.metadata?.delivery;
+      const isA2AFlowTask = delivery === "a2a-async-request" || delivery === "a2a-result-delivery" || delivery === "a2a-result-callback";
+      if (!original || !parent || parent.task.taskId !== responseForTaskId || !isA2AFlowTask ||
+          input.interaction === "A2B" || input.selector !== undefined || original.task.roomId !== room.roomId) {
+        throw runtimeFault("INVALID_REQUEST", source.provider, "responseForTaskId must identify this active A2A task");
+      }
+      metadata = { delivery: "a2a-result-delivery", responseForTaskId };
     } else {
-      metadata = { delivery: "a2a-async-request" };
-    }
-    const target = await this.resolveNativeCallerTarget(source, session, room, targetInput, [agentId]);
-    const { resolvedTargetAgent, ...submissionTarget } = target;
-    if (callbackForTaskId !== undefined) {
-      const recipient = resolvedTargetAgent ? this.agents.get(resolvedTargetAgent) : undefined;
-      const recipientSession = recipient ? this.sessions.get(recipient.agentId) : undefined;
-      const recipientAdapter = recipient ? this.adapters.get(recipient.adapterId) : undefined;
-      if (!recipient || !recipientSession || !recipientAdapter?.getPromptAddress?.(recipientSession)) {
-        throw runtimeFault("INVALID_REQUEST", source.provider, "The original caller cannot receive hidden A2A communication summaries");
+      if (bondedParent) {
+        throw runtimeFault("PERMISSION_DENIED", source.provider, "A bonded agent cannot delegate another task");
       }
+      metadata = { delivery: interaction === "A2B" ? "a2b-bonded-request" : "a2a-async-request" };
     }
-    const parentController = parent ? this.abortControllers.get(parent.task.taskId) : undefined;
-    const scheduled = this.createScheduledTask({
-      roomId: room.roomId,
-      ...submissionTarget,
-      message: targetInput.message,
-      ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
-      metadata,
-    }, {
-      sourceAgent: agentId,
-      ...(parent ? { parent } : {}),
-      ...(parentController ? { signal: parentController.signal } : {}),
-      ...(resolvedTargetAgent ? { resolvedTargetAgent } : {}),
-    }, callbackForTaskId !== undefined);
-    if (parentController && scheduled.completion) {
-      const cancelChild = (): void => { void this.cancelTask(scheduled.record.task.taskId).catch(() => undefined); };
-      parentController.signal.addEventListener("abort", cancelChild, { once: true });
-      if (parentController.signal.aborted) cancelChild();
-      void scheduled.completion.finally(() => parentController.signal.removeEventListener("abort", cancelChild)).catch(() => undefined);
-    }
-    const releasePendingRequest = callbackForTaskId === undefined
-      ? this.trackPendingAsyncRequest(source.agentId)
-      : undefined;
-    if (releasePendingRequest && scheduled.completion) void scheduled.completion.then(releasePendingRequest, releasePendingRequest);
-    await scheduled.persisted;
-    if (scheduled.completion) void scheduled.completion.catch(() => undefined);
-    else {
-      const pending = this.pendingInterpretations.get(scheduled.record.task.targetAgent) ?? new Set<string>();
-      pending.add(scheduled.record.task.taskId);
-      this.pendingInterpretations.set(scheduled.record.task.targetAgent, pending);
-    }
-    return copyTaskRecord(scheduled.record);
-  }
-
-  async claimForPrompt(provider: string, target: string, threadId: string): Promise<A2ACommunicationClaim | undefined> {
-    this.assertInitialized();
-    const matches = [...this.agents.values()].filter((agent) => {
-      if (agent.provider !== provider) return false;
-      const session = this.sessions.get(agent.agentId);
-      const adapter = this.adapters.get(agent.adapterId);
-      return Boolean(session && adapter?.matchesNativeSession?.(session, threadId) &&
-        (!adapter.matchesNativeTarget || adapter.matchesNativeTarget(session, target)));
-    });
-    if (matches.length !== 1) return undefined;
-    const agent = matches[0]!;
-    const taskIds = [...(this.pendingInterpretations.get(agent.agentId) ?? [])]
-      .filter((taskId) => !this.claimedInterpretations.has(taskId) && this.tasks.get(taskId)?.state === "QUEUED")
-      .sort((leftId, rightId) => {
-        const left = this.tasks.get(leftId)?.task;
-        const right = this.tasks.get(rightId)?.task;
-        return (left?.createdAt ?? 0) - (right?.createdAt ?? 0) || leftId.localeCompare(rightId);
+    try {
+      const target = await this.resolveNativeCallerTarget(source, session, room, targetInput, [agentId], parent?.task);
+      const { resolvedTargetAgent, ...submissionTarget } = target;
+      const parentController = parent ? this.abortControllers.get(parent.task.taskId) : undefined;
+      const scheduled = this.createScheduledTask({
+        roomId: room.roomId,
+        ...submissionTarget,
+        message: targetInput.message,
+        ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+        metadata,
+      }, {
+        sourceAgent: agentId,
+        ...(!callbackForTaskId && parent ? { parent } : {}),
+        ...(parentController ? { signal: parentController.signal } : {}),
+        ...(resolvedTargetAgent ? { resolvedTargetAgent } : {}),
       });
-    if (!taskIds.length) return undefined;
-    this.promptClaimSequence += 1;
-    const claimId = `a2a-prompt-${this.promptClaimSequence}-${taskIds[0]}`;
-    const key = interpretationKey(provider, target, threadId);
-    this.promptClaims.set(claimId, { agentId: agent.agentId, provider, taskIds, key });
-    for (const taskId of taskIds) this.claimedInterpretations.set(taskId, claimId);
-    const communications: PendingA2ACommunication[] = taskIds.flatMap((taskId) => {
-      const record = this.tasks.get(taskId);
-      if (!record) return [];
-      const source = this.agents.get(record.task.sourceAgent);
-      return [{
-        kind: "result",
-        taskId,
-        sourceAgentId: record.task.sourceAgent,
-        ...(source?.sessionName ? { sourceSessionName: source.sessionName } : {}),
-        message: record.task.message,
-      }];
-    });
-    return { claimId, communications };
-  }
-
-  async acceptPromptClaim(claimId: string, turnId?: string): Promise<void> {
-    this.assertInitialized();
-    const claim = this.promptClaims.get(claimId);
-    if (!claim) return;
-    this.promptClaims.delete(claimId);
-    for (const taskId of claim.taskIds) {
-      this.claimedInterpretations.delete(taskId);
-      const record = this.tasks.get(taskId);
-      if (!record || record.state !== "QUEUED") continue;
-      this.removePendingInterpretation(record.task.targetAgent, taskId);
-      this.transitionTask(record, "RUNNING");
-    }
-    const records = claim.taskIds.filter((taskId) => this.tasks.get(taskId)?.state === "RUNNING");
-    if (records.length) {
-      const bindings = this.interpretationBindings.get(claim.key) ?? [];
-      const acceptedTurnId = turnId ?? claim.observedTurnId;
-      const binding = { taskIds: records, ...(acceptedTurnId ? { turnId: acceptedTurnId } : {}) };
-      bindings.push(binding);
-      this.interpretationBindings.set(claim.key, bindings);
-      const completions = this.earlyPromptCompletions.get(claim.key) ?? [];
-      const completionIndex = completions.findIndex((completion) => acceptedTurnId ? completion.turnId === acceptedTurnId : !completion.turnId);
-      if (completionIndex >= 0) {
-        const [completion] = completions.splice(completionIndex, 1);
-        if (completions.length) this.earlyPromptCompletions.set(claim.key, completions);
-        else this.earlyPromptCompletions.delete(claim.key);
-        this.removeInterpretationBinding(claim.key, binding);
-        this.completeInterpretationTasks(records, claim.provider, completion!.state, completion!.message, completion!.error);
+      if (parentController) {
+        const cancelChild = (): void => { void this.cancelTask(scheduled.record.task.taskId).catch(() => undefined); };
+        parentController.signal.addEventListener("abort", cancelChild, { once: true });
+        if (parentController.signal.aborted) cancelChild();
+        void scheduled.completion.finally(() => parentController.signal.removeEventListener("abort", cancelChild)).catch(() => undefined);
       }
-      await this.persist();
+      const releasePendingRequest = this.trackPendingAsyncRequest(source.agentId);
+      void scheduled.completion.then(releasePendingRequest, releasePendingRequest);
+      await scheduled.persisted;
+      void scheduled.completion.catch(() => undefined);
+      return copyTaskRecord(scheduled.record);
+    } finally {
+      if (callbackForTaskId !== undefined) this.callbackReservations.delete(callbackForTaskId);
     }
-  }
-
-  async releasePromptClaim(claimId: string): Promise<void> {
-    const claim = this.promptClaims.get(claimId);
-    if (!claim) return;
-    this.promptClaims.delete(claimId);
-    for (const taskId of claim.taskIds) this.claimedInterpretations.delete(taskId);
-    if (!this.interpretationBindings.has(claim.key)) this.earlyPromptCompletions.delete(claim.key);
-  }
-
-  /** Completes queued A2A callbacks when the provider turn that carried them finishes. */
-  observeProviderEvent(event: AssistantEvent): void {
-    if (!this.initialized || !event.provider || !event.threadId || !event.target) return;
-    const key = interpretationKey(event.provider, event.target, event.threadId);
-    if (event.type === "turnStarted") {
-      if (event.turnId) {
-        for (const claim of this.promptClaims.values()) {
-          if (claim.key === key) claim.observedTurnId = event.turnId;
-        }
-      }
-      return;
-    }
-    if (event.type === "assistantDelta" || event.type === "assistantMessageCompleted") {
-      if (!event.turnId) return;
-      const claimed = [...this.promptClaims.values()].some((claim) => claim.key === key);
-      if (!claimed && !this.interpretationBindings.has(key)) return;
-      const textKey = `${key}\u0000${event.turnId}`;
-      const messages = this.interpretationText.get(textKey) ?? new Map<string, string>();
-      if (event.type === "assistantDelta") messages.set(event.messageId, `${messages.get(event.messageId) ?? ""}${event.text}`);
-      else messages.set(event.messageId, event.text);
-      this.interpretationText.set(textKey, messages);
-      return;
-    }
-    if (event.type !== "turnCompleted") return;
-    const bindings = this.interpretationBindings.get(key);
-    const textKey = event.turnId ? `${key}\u0000${event.turnId}` : undefined;
-    const interpretedMessage = textKey
-      ? [...(this.interpretationText.get(textKey)?.values() ?? [])].map((text) => text.trim()).filter(Boolean).join("\n\n")
-      : "";
-    if (textKey) this.interpretationText.delete(textKey);
-    const providerStatus = (event.status ?? "completed").toLowerCase();
-    const state: PromptTurnCompletion["state"] =
-      providerStatus.includes("cancel") || providerStatus.includes("interrupt") ? "CANCELLED"
-        : providerStatus.includes("fail") || providerStatus.includes("error") ? "FAILED" : "COMPLETED";
-    const message = interpretedMessage || event.error ||
-      (state === "COMPLETED" ? "A2A communication was delivered for interpretation." : "The provider could not interpret the A2A communication.");
-    const matched = (bindings ?? []).filter((binding) => !binding.turnId || !event.turnId || binding.turnId === event.turnId);
-    if (!matched.length) {
-      if ([...this.promptClaims.values()].some((claim) => claim.key === key)) {
-        const completions = this.earlyPromptCompletions.get(key) ?? [];
-        completions.push({ ...(event.turnId ? { turnId: event.turnId } : {}), state, message, ...(event.error ? { error: event.error } : {}) });
-        if (completions.length > 8) completions.shift();
-        this.earlyPromptCompletions.set(key, completions);
-      }
-      return;
-    }
-    const remaining = (bindings ?? []).filter((binding) => !matched.includes(binding));
-    if (remaining.length) this.interpretationBindings.set(key, remaining);
-    else this.interpretationBindings.delete(key);
-    for (const binding of matched) this.completeInterpretationTasks(binding.taskIds, event.provider, state, message, event.error);
-    void this.persist().catch(() => undefined);
   }
 
   private trackPendingAsyncRequest(agentId: string): () => void {
@@ -574,35 +463,6 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
       .map((taskId) => this.tasks.get(taskId))
       .filter((task): task is AgentTaskRecord => task !== undefined && (task.state === "RUNNING" || task.state === "WAITING"));
     return candidates.length === 1 ? candidates[0] : undefined;
-  }
-
-  private removePendingInterpretation(agentId: string, taskId: string): void {
-    const pending = this.pendingInterpretations.get(agentId);
-    pending?.delete(taskId);
-    if (pending?.size === 0) this.pendingInterpretations.delete(agentId);
-  }
-
-  private removeInterpretationBinding(key: string, bindingToRemove: InterpretationBinding): void {
-    const bindings = this.interpretationBindings.get(key) ?? [];
-    const remaining = bindings.filter((binding) => binding !== bindingToRemove);
-    if (remaining.length) this.interpretationBindings.set(key, remaining);
-    else this.interpretationBindings.delete(key);
-  }
-
-  private completeInterpretationTasks(
-    taskIds: string[],
-    provider: string,
-    state: PromptTurnCompletion["state"],
-    message: string,
-    error?: string,
-  ): void {
-    for (const taskId of taskIds) {
-      const record = this.tasks.get(taskId);
-      if (!record || record.state !== "RUNNING") continue;
-      record.result = { taskId, agentId: record.task.targetAgent, status: state, message };
-      if (state === "FAILED") record.error = runtimeFault("PROCESS_EXITED", provider, error ?? "Provider turn failed while interpreting A2A communication", true).detail;
-      this.transitionTask(record, state);
-    }
   }
 
   getTask(taskId: string): AgentTaskRecord | undefined {
@@ -925,14 +785,14 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
 
   async submitTask(input: SubmitAgentTaskInput): Promise<AgentTaskRecord> {
     this.assertInitialized();
-    return this.createScheduledTask(input, {}).completion!;
+    return this.createScheduledTask(input, {}).completion;
   }
 
   async enqueueTask(input: SubmitAgentTaskInput): Promise<AgentTaskRecord> {
     this.assertInitialized();
     const scheduled = this.createScheduledTask(input, {});
     await scheduled.persisted;
-    void scheduled.completion!.catch(() => undefined);
+    void scheduled.completion.catch(() => undefined);
     return copyTaskRecord(scheduled.record);
   }
 
@@ -942,7 +802,6 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     if (!record) throw runtimeFault("INVALID_REQUEST", "", "Task does not exist");
     if (record.state === "QUEUED") {
       this.abortControllers.get(taskId)?.abort();
-      this.removePendingInterpretation(record.task.targetAgent, taskId);
       this.transitionTask(record, "CANCELLED");
       await this.persist();
       return copyTaskRecord(record);
@@ -967,7 +826,7 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     return copyTaskRecord(record);
   }
 
-  private createScheduledTask(input: A2ATaskSubmission, ancestry: TaskAncestry, deferExecution = false): ScheduledTask {
+  private createScheduledTask(input: A2ATaskSubmission, ancestry: TaskAncestry): ScheduledTask {
     validateSubmission(input);
     const room = this.requireRoom(input.roomId);
     const hasTarget = input.targetAgent !== undefined || input.targetSessionName !== undefined;
@@ -986,11 +845,12 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw runtimeFault("INVALID_REQUEST", "", "timeoutMs must be a positive integer");
     const sourceAgent = parent?.task.targetAgent ?? ancestry.sourceAgent ?? "orchestrator";
     if (parent && parent.task.roomId !== room.roomId) throw runtimeFault("INVALID_REQUEST", "", "Delegation must remain in its room");
+    const requiresResponseDelivery = input.metadata?.delivery === "a2a-async-request" && sourceAgent !== "orchestrator";
 
     const visited = parent ? [...parent.task.visitedAgents] : [];
     const agent = ancestry.resolvedTargetAgent
-      ? this.selectResolvedAgent(room, ancestry.resolvedTargetAgent, input.selector, visited)
-      : this.selectAgent(room, input.targetSessionName, input.targetAgent, input.selector, visited);
+      ? this.selectResolvedAgent(room, ancestry.resolvedTargetAgent, input.selector, visited, requiresResponseDelivery)
+      : this.selectAgent(room, input.targetSessionName, input.targetAgent, input.selector, visited, requiresResponseDelivery);
     if (!parent && ancestry.sourceAgent === agent.agentId) {
       throw runtimeFault("CYCLE_DETECTED", agent.provider, "An agent cannot assign a top-level task to its own session");
     }
@@ -1021,21 +881,19 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
       await persisted;
       return this.executeTask(record, agent, adapter, ancestry.signal);
     };
-    let completion: Promise<AgentTaskRecord> | undefined;
-    if (!deferExecution) {
-      if (adapter.capabilities.concurrentTasks) {
-        completion = execute();
-      } else {
-        const previous = this.serialTails.get(agent.agentId) ?? Promise.resolve();
-        completion = previous.catch(() => undefined).then(execute);
-        const tail = completion.then(() => undefined, () => undefined);
-        this.serialTails.set(agent.agentId, tail);
-        void tail.then(() => {
-          if (this.serialTails.get(agent.agentId) === tail) this.serialTails.delete(agent.agentId);
-        });
-      }
+    let completion: Promise<AgentTaskRecord>;
+    if (adapter.capabilities.concurrentTasks) {
+      completion = execute();
+    } else {
+      const previous = this.serialTails.get(agent.agentId) ?? Promise.resolve();
+      completion = previous.catch(() => undefined).then(execute);
+      const tail = completion.then(() => undefined, () => undefined);
+      this.serialTails.set(agent.agentId, tail);
+      void tail.then(() => {
+        if (this.serialTails.get(agent.agentId) === tail) this.serialTails.delete(agent.agentId);
+      });
     }
-    return { record, persisted, ...(completion ? { completion } : {}) };
+    return { record, persisted, completion };
   }
 
   private selectAgent(
@@ -1044,17 +902,21 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     targetAgent: string | undefined,
     selector: AgentSelector | undefined,
     visited: string[],
+    requiresResponseDelivery: boolean,
   ): AgentNode {
     const requestedName = targetSessionName ?? targetAgent;
     if (requestedName) {
       const named = this.findAgentsBySessionName(room, requestedName);
-      const eligibleNamed = named.find((agent) => this.isEligible(agent, selector, visited));
+      const eligibleNamed = named.find((agent) => this.isEligible(agent, selector, visited) &&
+        (!requiresResponseDelivery || this.agentCanSendA2A(agent)));
       if (eligibleNamed) return eligibleNamed;
       if (targetAgent) {
         if (visited.includes(targetAgent)) throw runtimeFault("CYCLE_DETECTED", "", "Delegation would revisit an agent");
         const byId = this.agents.get(targetAgent);
         if (byId && room.agentIds.includes(targetAgent)) {
-          if (!this.isEligible(byId, selector, visited)) throw runtimeFault("NO_AGENT_AVAILABLE", byId.provider, "Target agent is not available for this task");
+          if (!this.isEligible(byId, selector, visited) || (requiresResponseDelivery && !this.agentCanSendA2A(byId))) {
+            throw runtimeFault("NO_AGENT_AVAILABLE", byId.provider, "Target agent is not available for this task");
+          }
           return byId;
         }
       }
@@ -1067,7 +929,8 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
 
     const eligible = room.agentIds
       .map((agentId) => this.agents.get(agentId))
-      .filter((agent): agent is AgentNode => agent !== undefined && this.isEligible(agent, selector, visited));
+      .filter((agent): agent is AgentNode => agent !== undefined && this.isEligible(agent, selector, visited) &&
+        (!requiresResponseDelivery || this.agentCanSendA2A(agent)));
     eligible.sort((left, right) => {
       const leftLoad = this.agentLoad(left.agentId);
       const rightLoad = this.agentLoad(right.agentId);
@@ -1083,13 +946,26 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     return selected;
   }
 
-  private selectResolvedAgent(room: AgentRoom, agentId: string, selector: AgentSelector | undefined, visited: string[]): AgentNode {
+  private selectResolvedAgent(
+    room: AgentRoom,
+    agentId: string,
+    selector: AgentSelector | undefined,
+    visited: string[],
+    requiresResponseDelivery: boolean,
+  ): AgentNode {
     if (visited.includes(agentId)) throw runtimeFault("CYCLE_DETECTED", "", "Delegation would revisit an agent");
     const agent = this.agents.get(agentId);
-    if (!agent || !room.agentIds.includes(agentId) || !this.isEligible(agent, selector, visited)) {
+    if (!agent || !room.agentIds.includes(agentId) || !this.isEligible(agent, selector, visited) ||
+        (requiresResponseDelivery && !this.agentCanSendA2A(agent))) {
       throw runtimeFault("NO_AGENT_AVAILABLE", agent?.provider ?? "", "Resolved target agent is not available for this task");
     }
     return agent;
+  }
+
+  private agentCanSendA2A(agent: AgentNode): boolean {
+    const adapter = this.adapters.get(agent.adapterId);
+    const session = this.sessions.get(agent.agentId);
+    return Boolean(adapter?.capabilities.delegation && session && (adapter.canDelegate?.(session) ?? true));
   }
 
   private findAgentsBySessionName(room: AgentRoom, sessionName: string): AgentNode[] {
@@ -1104,6 +980,8 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
   private validateNativeTargetRequest(input: AgentSessionToolRequest, provider: string): void {
     requireNonEmpty(input.message, "message");
     if (input.targetAgent !== undefined) requireNonEmpty(input.targetAgent, "targetAgent");
+    if (input.responseForTaskId !== undefined) requireNonEmpty(input.responseForTaskId, "responseForTaskId");
+    if (input.callbackForTaskId !== undefined) requireNonEmpty(input.callbackForTaskId, "callbackForTaskId");
     if (input.targetSessionName !== undefined) {
       requireNonEmpty(input.targetSessionName, "targetSessionName");
       if (input.targetSessionName.trim().length > 120) {
@@ -1122,6 +1000,7 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     room: AgentRoom,
     input: AgentSessionToolRequest,
     visited: string[],
+    sourceTask?: AgentTask,
   ): Promise<ResolvedNativeCallerTarget> {
     if (input.selector) return { selector: { ...input.selector } };
     if (!input.targetSessionName && input.targetAgent) {
@@ -1163,7 +1042,7 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
       if (!adapter.getPermissionProfile) {
         throw runtimeFault("PERMISSION_DENIED", source.provider, "The calling agent does not expose an inheritable permission profile");
       }
-      inheritedPermissions = await adapter.getPermissionProfile(sourceSession);
+      inheritedPermissions = await adapter.getPermissionProfile(sourceSession, sourceTask);
       if (!inheritedPermissions || inheritedPermissions.provider !== source.provider) {
         throw runtimeFault("PERMISSION_DENIED", source.provider, "The calling agent's effective permissions could not be determined");
       }
@@ -1412,57 +1291,23 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     this.transitionTask(record, "RUNNING");
     await this.persist();
 
+    const taskAgentIds = new Set([record.task.sourceAgent, record.task.targetAgent]);
+    const taskAgents = [...taskAgentIds].flatMap((agentId) => {
+      const taskAgent = this.agents.get(agentId);
+      return taskAgent ? [copyAgentSummary(taskAgent)] : [];
+    });
+
     const context: AgentExecutionContext = {
       signal: controller.signal,
       history: [],
-      agents: this.listAgents(record.task.roomId),
+      agents: taskAgents,
       ...(inheritedPermissions ? { inheritedPermissions: { ...inheritedPermissions } } : {}),
       delegate: async (request) => {
         if (!adapter.capabilities.delegation) {
           throw runtimeFault("PERMISSION_DENIED", agent.provider, "This adapter does not expose task delegation");
         }
         if (controller.signal.aborted) throw runtimeFault("PROCESS_EXITED", agent.provider, "Parent task is no longer active");
-        this.addWaiting(agent.agentId, record.task.taskId);
-        this.transitionTask(record, "WAITING");
-        this.setAgentState(agent, "WAITING");
-        await this.persist();
-        releaseWorkspaceLock?.();
-        releaseWorkspaceLock = undefined;
-        workspaceLock.release = undefined;
-        let cancelChild: (() => void) | undefined;
-        try {
-          const target = await this.resolveNativeCallerTarget(agent, session, this.requireRoom(record.task.roomId), request, record.task.visitedAgents);
-          const { resolvedTargetAgent, ...submissionTarget } = target;
-          const child = this.createScheduledTask({
-            roomId: record.task.roomId,
-            ...submissionTarget,
-            message: request.message,
-            ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs }),
-            maxDepth: record.task.maxDepth,
-          }, { parent: record, signal: controller.signal, ...(resolvedTargetAgent ? { resolvedTargetAgent } : {}) });
-          cancelChild = (): void => { void this.cancelTask(child.record.task.taskId).catch(() => undefined); };
-          controller.signal.addEventListener("abort", cancelChild, { once: true });
-          if (controller.signal.aborted) cancelChild();
-          await child.persisted;
-          return await child.completion!;
-        } finally {
-          if (cancelChild) controller.signal.removeEventListener("abort", cancelChild);
-          if (agent.workspace && !controller.signal.aborted && !isTerminalTask(record.state)) {
-            const remaining = record.task.timeoutMs - Math.max(0, this.readClock() - record.task.createdAt);
-            if (remaining <= 0) {
-              timedOut = true;
-              controller.abort();
-            } else {
-              releaseWorkspaceLock = await this.dependencies.workspaceLocks.acquire(agent.workspace, controller.signal);
-              workspaceLock.release = releaseWorkspaceLock;
-              this.workspaceLockReleases.set(record.task.taskId, workspaceLock);
-            }
-          }
-          this.removeWaiting(agent.agentId, record.task.taskId);
-          if (!isTerminalTask(record.state) && record.state === "WAITING") this.transitionTask(record, "RUNNING");
-          this.setDerivedAgentState(agent);
-          await this.persist();
-        }
+        return this.sendFromAgentWithParent(agent.agentId, request, record);
       },
     };
     const timeoutTimer = setTimeout(() => {
@@ -1490,16 +1335,24 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
       const rawResult = await raceWithAbort(operation, controller.signal, () => timedOut);
       const result = parseAgentResult(rawResult, record.task.taskId, agent.agentId);
       if (result.status === "COMPLETED") {
-        record.result = result;
-        this.transitionTask(record, "COMPLETED");
-        if (session.persistenceLevel === 1 && session.runtimeManagedHistory) {
-          const history = this.histories.get(agent.agentId) ?? [];
-          const createdAt = this.readClock();
-          history.push(
-            { taskId: record.task.taskId, role: "user", message: record.task.message, createdAt },
-            { taskId: record.task.taskId, role: "assistant", message: result.message, createdAt },
-          );
-          this.histories.set(agent.agentId, history);
+        const requiresDeliveredResponse = record.task.metadata?.delivery === "a2a-async-request" &&
+          record.task.sourceAgent !== "orchestrator" && !this.hasAcceptedResponseDelivery(record.task.taskId);
+        if (requiresDeliveredResponse) {
+          const message = "A2A responder completed without delivering its response to an agent";
+          record.result = { ...result, status: "FAILED", message };
+          this.finishFailure(record, runtimeFault("INVALID_REQUEST", agent.provider, message).detail);
+        } else {
+          record.result = result;
+          this.transitionTask(record, "COMPLETED");
+          if (session.persistenceLevel === 1 && session.runtimeManagedHistory) {
+            const history = this.histories.get(agent.agentId) ?? [];
+            const createdAt = this.readClock();
+            history.push(
+              { taskId: record.task.taskId, role: "user", message: record.task.message, createdAt },
+              { taskId: record.task.taskId, role: "assistant", message: result.message, createdAt },
+            );
+            this.histories.set(agent.agentId, history);
+          }
         }
       } else if (result.status === "CANCELLED") {
         record.result = result;
@@ -1568,7 +1421,13 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     if (!sourceAdapter.getPermissionProfile) {
       throw runtimeFault("PERMISSION_DENIED", source.provider, "The calling agent does not expose an inheritable permission profile");
     }
-    const profile = await sourceAdapter.getPermissionProfile(sourceSession);
+    const sourceTaskId = task.parentTaskId ?? (typeof task.metadata?.callbackForTaskId === "string" ? task.metadata.callbackForTaskId : undefined);
+    const sourceTaskRecord = sourceTaskId ? this.tasks.get(sourceTaskId) : undefined;
+    const sourceTask = sourceTaskRecord?.task.targetAgent === source.agentId &&
+      (sourceTaskRecord.state === "RUNNING" || sourceTaskRecord.state === "WAITING")
+      ? sourceTaskRecord.task
+      : undefined;
+    const profile = await sourceAdapter.getPermissionProfile(sourceSession, sourceTask);
     if (!profile || profile.provider !== source.provider) {
       throw runtimeFault("PERMISSION_DENIED", source.provider, "The calling agent's effective permissions could not be determined");
     }
@@ -1583,6 +1442,11 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
     if (record.state === "QUEUED" || record.state === "RUNNING" || record.state === "WAITING") this.transitionTask(record, "FAILED");
   }
 
+  private hasAcceptedResponseDelivery(taskId: string): boolean {
+    return [...this.tasks.values()].some(({ task }) =>
+      task.metadata?.responseForTaskId === taskId || task.metadata?.callbackForTaskId === taskId);
+  }
+
   private transitionTask(record: AgentTaskRecord, next: TaskState): void {
     if (!canTransitionTask(record.state, next)) throw new Error(`Invalid task state transition: ${record.state} -> ${next}`);
     record.state = next;
@@ -1592,7 +1456,9 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
   }
 
   private publishTaskResultSummary(record: AgentTaskRecord): void {
-    if (record.task.metadata?.delivery !== "a2a-async-request" || record.task.sourceAgent === "orchestrator") return;
+    const delivery = record.task.metadata?.delivery;
+    if ((delivery !== "a2a-async-request" && delivery !== "a2a-result-delivery" && delivery !== "a2a-result-callback" &&
+        delivery !== "a2b-bonded-request") || record.task.sourceAgent === "orchestrator") return;
     const caller = this.agents.get(record.task.sourceAgent);
     const callerSession = caller ? this.sessions.get(caller.agentId) : undefined;
     const callerAdapter = caller ? this.adapters.get(caller.adapterId) : undefined;
@@ -1604,7 +1470,7 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
       : [...this.tasks.values()]
         .filter((candidate) => candidate.task.rootTaskId === record.task.rootTaskId && isTerminalTask(candidate.state))
         .sort((left, right) => left.task.createdAt - right.task.createdAt || left.task.taskId.localeCompare(right.task.taskId));
-    const communications = records.flatMap((candidate): PendingA2ACommunication[] => {
+    const communications = records.flatMap((candidate): A2ACommunicationSummaryItem[] => {
       const source = this.agents.get(candidate.task.sourceAgent);
       const responder = this.agents.get(candidate.task.targetAgent);
       return [
@@ -1762,10 +1628,6 @@ export class A2ARuntime implements A2ARuntimePort, A2APromptInboxPort {
 
 function normalizeSessionName(value: string): string {
   return value.trim().normalize("NFKC").toLowerCase();
-}
-
-function interpretationKey(provider: string, target: string, threadId: string): string {
-  return `${provider}\u0000${target}\u0000${threadId}`;
 }
 
 function assistantProvider(value: string): AssistantProvider | undefined {

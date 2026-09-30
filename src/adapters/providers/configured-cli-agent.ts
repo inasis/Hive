@@ -39,11 +39,14 @@ type ActiveInvocation = {
 };
 
 type AgentDelegationRequest = {
+  interaction?: "A2A" | "A2B";
   targetAgent?: string;
   targetSessionName?: string;
   selector?: { role?: string; capabilities?: string[]; workspace?: string; provider?: string };
   message: string;
   timeoutMs?: number;
+  responseForTaskId?: string;
+  callbackForTaskId?: string;
 };
 
 /** Explicitly configured subprocess adapter for documented provider CLIs and custom agents. */
@@ -144,9 +147,6 @@ export class ConfiguredCliAgentAdapter implements AgentAdapter {
     if (this.active.has(task.taskId)) throw adapterFault("INVALID_REQUEST", this.provider, "A2A task ID is already active");
     const invocation: ActiveInvocation = { session };
     this.active.set(task.taskId, invocation);
-    let nextPrompt = formatPrompt(task, task.message, this.profile.delegation ? this.profile : undefined);
-    let nextArgs = configuredArgs;
-    let delegateCount = 0;
     const artifacts: NonNullable<AgentResult["artifacts"]> = [];
     const executable = await resolveExecutable(this.profile.command);
     if (!executable) {
@@ -155,68 +155,43 @@ export class ConfiguredCliAgentAdapter implements AgentAdapter {
     }
 
     try {
-      while (true) {
-        const args = materializeArgs(nextArgs, session, task.taskId);
-        if (this.profile.promptDelivery === "argument") args.push(nextPrompt);
-        const { code, stdout, stderr } = await runProcess({
-          command: executable,
-          args,
-          ...(session.workspace ? { cwd: session.workspace } : {}),
-          ...(this.profile.environment ? { environment: this.profile.environment } : {}),
-          ...(this.profile.promptDelivery === "stdin" ? { input: this.profile.stdinFormat === "json"
-            ? JSON.stringify({ task, message: nextPrompt, history: [] })
-            : nextPrompt } : {}),
-          signal: context.signal,
-          stopOnAbort: this.profile.cancellation === undefined,
-          maxOutputBytes: this.profile.maxOutputBytes ?? 8 * 1024 * 1024,
-          onSpawn: (child) => { invocation.child = child; },
-        });
-        delete invocation.child;
-        if (code !== 0) {
-          return {
-            taskId: task.taskId,
-            agentId: task.targetAgent,
-            status: "FAILED",
-            message: stderr.trim() || stdout.trim() || `Agent process exited with status ${code ?? "unknown"}.`,
-            metadata: { exitCode: code },
-          };
-        }
-        const output = mapCommandResult(this.profile, stdout, task);
-        artifacts.push(...(output.result.artifacts ?? []));
-        if (!output.delegations.length) {
-          return { ...output.result, ...(artifacts.length ? { artifacts } : {}) };
-        }
-        if (!this.profile.delegation) {
-          throw adapterFault("OUTPUT_PARSE_FAILED", this.provider, "Agent requested delegation without an enabled A2A delegation profile");
-        }
-        if (session.persistenceLevel === 0) {
-          throw adapterFault("RESUME_UNSUPPORTED", this.provider, "Delegation requires a persistent or runtime-managed session");
-        }
-        if (delegateCount + output.delegations.length > this.profile.delegation.maxCallsPerTask) {
-          throw adapterFault("MAX_DEPTH_EXCEEDED", this.provider, "Agent exceeded the configured delegation call limit");
-        }
-        const delegatedResults = [];
-        for (const request of output.delegations) {
-          const child = await context.delegate(request);
-          delegateCount += 1;
-          delegatedResults.push({
-            taskId: child.task.taskId,
-            targetAgent: child.task.targetAgent,
-            state: child.state,
-            ...(child.result ? { result: child.result } : {}),
-            ...(child.error ? { error: child.error } : {}),
-          });
-        }
-        const followupMessage = [
-          "The delegated A2A subtask results are ready. Continue your original task in this same native session.",
-          `Original request:\n${task.message}`,
-          `Your prior response:\n${output.result.message}`,
-          `Subtask results:\n${JSON.stringify(delegatedResults, null, 2)}`,
-          "Return the final answer. Do not start additional delegation unless required.",
-        ].join("\n\n");
-        nextPrompt = formatPrompt(task, followupMessage);
-        nextArgs = session.persistenceLevel === 2 ? this.profile.resumeArgs! : this.profile.args;
+      const args = materializeArgs(configuredArgs, session, task.taskId);
+      const prompt = formatPrompt(task, task.message, this.profile.delegation ? this.profile : undefined);
+      if (this.profile.promptDelivery === "argument") args.push(prompt);
+      const { code, stdout, stderr } = await runProcess({
+        command: executable,
+        args,
+        ...(session.workspace ? { cwd: session.workspace } : {}),
+        ...(this.profile.environment ? { environment: this.profile.environment } : {}),
+        ...(this.profile.promptDelivery === "stdin" ? { input: this.profile.stdinFormat === "json"
+          ? JSON.stringify({ task, message: prompt, history: [] })
+          : prompt } : {}),
+        signal: context.signal,
+        stopOnAbort: this.profile.cancellation === undefined,
+        maxOutputBytes: this.profile.maxOutputBytes ?? 8 * 1024 * 1024,
+        onSpawn: (child) => { invocation.child = child; },
+      });
+      delete invocation.child;
+      if (code !== 0) {
+        return {
+          taskId: task.taskId,
+          agentId: task.targetAgent,
+          status: "FAILED",
+          message: stderr.trim() || stdout.trim() || `Agent process exited with status ${code ?? "unknown"}.`,
+          metadata: { exitCode: code },
+        };
       }
+      const output = mapCommandResult(this.profile, stdout, task);
+      artifacts.push(...(output.result.artifacts ?? []));
+      if (!output.delegations.length) return { ...output.result, ...(artifacts.length ? { artifacts } : {}) };
+      if (!this.profile.delegation) {
+        throw adapterFault("OUTPUT_PARSE_FAILED", this.provider, "Agent requested delegation without an enabled A2A delegation profile");
+      }
+      if (output.delegations.length > this.profile.delegation.maxCallsPerTask) {
+        throw adapterFault("MAX_DEPTH_EXCEEDED", this.provider, "Agent exceeded the configured delegation call limit");
+      }
+      for (const request of output.delegations) await context.delegate(request);
+      return { ...output.result, ...(artifacts.length ? { artifacts } : {}) };
     } finally {
       this.active.delete(task.taskId);
     }
@@ -256,8 +231,8 @@ function validateProfile(profile: ConfiguredCliAgentProfile): void {
   }
   if (profile.delegation && (profile.outputFormat === "text" || !Number.isSafeInteger(profile.delegation.maxCallsPerTask) ||
       profile.delegation.maxCallsPerTask < 1 || profile.delegation.maxCallsPerTask > 8 ||
-      !profile.sessions.length || profile.sessions.some((session) => session.persistenceLevel === 0))) {
-    throw new Error("Delegation requires structured output, persistent sessions, and a limit from 1 to 8 calls");
+      !profile.sessions.length)) {
+    throw new Error("Delegation requires structured output, at least one session, and a limit from 1 to 8 calls");
   }
   if (profile.cancellation && (!Array.isArray(profile.cancellation.args) || profile.cancellation.args.some((arg) => typeof arg !== "string"))) {
     throw new Error("Configured CLI cancellation args must be strings");
@@ -294,10 +269,28 @@ function formatPrompt(
 ): string {
   const delegationInstruction = delegationProfile?.delegation
     ? delegationProfile.outputFormat === "ndjson"
-      ? `\n\nEmit a final NDJSON result event where ${delegationProfile.ndjsonResultEvent!.eventField} is ${JSON.stringify(delegationProfile.ndjsonResultEvent!.eventName)} and ${delegationProfile.ndjsonResultEvent!.textField} contains your message. Include an optional delegations array with message and targetSessionName (preferred) and/or targetAgent ID, or a selector. The runtime will return child results to this same session before you continue. Do not delegate when the task can be completed directly.`
-      : "\n\nReturn one JSON object with a message field. To delegate work, add a delegations array with message and targetSessionName (preferred) and/or targetAgent ID, or a selector. The runtime will return child results to this same session before you continue. Do not delegate when the task can be completed directly."
+      ? `\n\nEmit a final NDJSON result event where ${delegationProfile.ndjsonResultEvent!.eventField} is ${JSON.stringify(delegationProfile.ndjsonResultEvent!.eventName)} and ${delegationProfile.ndjsonResultEvent!.textField} contains your message. Include an optional delegations array. Each item can include interaction, message, targetSessionName (preferred) and/or targetAgent ID, or a selector; use responseForTaskId or callbackForTaskId to mark a response delivery. Delegations run asynchronously; do not wait for them. Do not delegate when the task can be completed directly.`
+      : "\n\nReturn one JSON object with a message field. To send a task or response, add a delegations array with interaction, message, targetSessionName (preferred) and/or targetAgent ID, or a selector; use responseForTaskId or callbackForTaskId to mark a response delivery. Delegations run asynchronously; do not wait for them. Do not delegate when the task can be completed directly."
     : "";
-  return `Handle one Hive A2A task. Use only this request as task context; read workspace files if more context is needed.\nTask ID: ${task.taskId}\n\nRequest:\n${message}${delegationInstruction}`;
+  const delivery = task.metadata?.delivery;
+  const taskInstruction = delivery === "a2a-async-request"
+    ? `A2A request: deliver your answer in an async delegation with responseForTaskId=${task.taskId} to a chosen existing/new agent, or send it to the original caller with callbackForTaskId=${task.taskId}. Accepted delivery is success; do not wait for the recipient. A local result without delivery is incomplete.`
+    : delivery === "a2a-result-delivery"
+      ? `A2A response recipient: forward with responseForTaskId=${task.taskId}, return once to your sender with callbackForTaskId=${task.taskId}, or finish. Do not wait for accepted sends.`
+      : delivery === "a2a-result-callback"
+        ? `A2A callback recipient: forward with responseForTaskId=${task.taskId} or finish. This result was already returned; do not send another callback.`
+        : delivery === "a2b-bonded-request"
+          ? `Bonded A2B: answer directly as this agent; do not delegate. If the caller must resume, send it a2a_send with callbackForTaskId=${task.taskId}.`
+          : undefined;
+  return [
+    "Handle one Hive A2A task. Use only this request as task context; read workspace files if more context is needed.",
+    `Task ID: ${task.taskId}`,
+    ...(taskInstruction ? [taskInstruction] : []),
+    ...(delegationInstruction ? [delegationInstruction.trim()] : []),
+    "",
+    "Request:",
+    message,
+  ].join("\n");
 }
 
 function mapCommandResult(
@@ -356,12 +349,27 @@ function mapCommandResult(
     if (request.timeoutMs !== undefined && (!Number.isSafeInteger(request.timeoutMs) || (request.timeoutMs as number) <= 0)) {
       throw adapterFault("OUTPUT_PARSE_FAILED", "", "Delegation timeoutMs must be a positive integer");
     }
+    if (request.interaction !== undefined && request.interaction !== "A2A" && request.interaction !== "A2B") {
+      throw adapterFault("OUTPUT_PARSE_FAILED", "", "Delegation interaction must be A2A or A2B");
+    }
+    const responseForTaskId = request.responseForTaskId;
+    const callbackForTaskId = request.callbackForTaskId;
+    if ((responseForTaskId !== undefined && (typeof responseForTaskId !== "string" || !responseForTaskId.trim())) ||
+        (callbackForTaskId !== undefined && (typeof callbackForTaskId !== "string" || !callbackForTaskId.trim()))) {
+      throw adapterFault("OUTPUT_PARSE_FAILED", "", "Delegation response task IDs must be non-empty strings");
+    }
+    if (responseForTaskId !== undefined && callbackForTaskId !== undefined) {
+      throw adapterFault("OUTPUT_PARSE_FAILED", "", "Delegation cannot set both responseForTaskId and callbackForTaskId");
+    }
     return {
+      ...(request.interaction ? { interaction: request.interaction } : {}),
       ...(hasTarget ? { targetAgent: request.targetAgent as string } : {}),
       ...(hasSessionName ? { targetSessionName: request.targetSessionName as string } : {}),
       ...(hasSelector ? { selector: request.selector as NonNullable<AgentDelegationRequest["selector"]> } : {}),
       message: request.message,
       ...(request.timeoutMs === undefined ? {} : { timeoutMs: request.timeoutMs as number }),
+      ...(typeof responseForTaskId === "string" ? { responseForTaskId } : {}),
+      ...(typeof callbackForTaskId === "string" ? { callbackForTaskId } : {}),
     };
   });
   return {

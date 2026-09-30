@@ -4,6 +4,7 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import type { TranscriptEntry } from "../../../shared/bridge";
 import { Icon } from "../../shared/Icon";
+import { MermaidMarkdownPre } from "../../shared/MermaidMarkdown";
 
 export const Transcript = memo(function Transcript({ entry, cwd, onOpenFile, copyText, responseDurationMs, onFork, forking = false }: { entry: TranscriptEntry; cwd?: string; onOpenFile?: (path: string) => void; copyText?: string; responseDurationMs?: number; onFork?: () => void; forking?: boolean }) {
   if (entry.role === "user") return <div className="user-entry"><div className="user-bubble markdown-body"><MessageMarkdown text={entry.text} cwd={cwd ?? ""} onOpenFile={onOpenFile} />{entry.images?.length ? <div className="transcript-images">{entry.images.map((image) => <img key={`${image.name}:${image.data.length}`} src={`data:${image.mimeType};base64,${image.data}`} alt={image.name} title={image.name} loading="lazy" />)}</div> : null}</div><CopyTranscriptButton text={entry.text} /></div>;
@@ -90,6 +91,7 @@ function MessageMarkdown({ text, cwd, onOpenFile }: { text: string; cwd: string;
       const opensNewTab = Boolean(href && /^https?:/i.test(href));
       return <a href={href} title={title} target={opensNewTab ? "_blank" : undefined} rel={opensNewTab ? "noopener noreferrer" : undefined}>{children}</a>;
     },
+    pre: MermaidMarkdownPre,
     table: ({ children }) => <div className="markdown-table-wrap"><table>{children}</table></div>,
   };
   return <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>{text}</ReactMarkdown>;
