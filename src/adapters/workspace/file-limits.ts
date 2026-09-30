@@ -1,0 +1,4 @@
+export const MAX_TEXT_FILE_BYTES = 1024 * 1024;
+export const MAX_TEXT_WRITE_BYTES = 5 * 1024 * 1024;
+export const MAX_DIRECTORY_ENTRIES = 2_000;
+export const MAX_WORKSPACE_RESPONSE_BYTES = 5 * 1024 * 1024;

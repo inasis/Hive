@@ -1,0 +1,18 @@
+{
+  "name": "hive-android",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Android client for the Hive daemon",
+  "scripts": {
+    "add:android": "cap add android",
+    "sync": "cap sync android",
+    "build": "(test -d android || cap add android) && node scripts/sync-icons.mjs && cap sync android && node scripts/sync-icons.mjs && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.4.3",
+    "@capacitor/core": "^7.4.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.4.3"
+  }
+}

@@ -1,0 +1,71 @@
+name: Android app build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - apps/android/**
+      - apps/desktop/src/**
+      - apps/desktop/index.html
+      - apps/desktop/package.json
+      - apps/desktop/vite.config.ts
+      - package.json
+      - package-lock.json
+      - src/**
+      - scripts/build-android.sh
+      - .github/workflows/build-clients.yml
+  pull_request:
+    paths:
+      - apps/android/**
+      - apps/desktop/src/**
+      - apps/desktop/index.html
+      - apps/desktop/package.json
+      - apps/desktop/vite.config.ts
+      - package.json
+      - package-lock.json
+      - src/**
+      - scripts/build-android.sh
+      - .github/workflows/build-clients.yml
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+
+      - name: Install workspace dependencies
+        run: npm ci
+
+      - name: Build Android app
+        run: npm run android:build
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hive-android-debug
+          path: artifacts/android/Hive-android-debug.apk
+          if-no-files-found: error
+          retention-days: 14

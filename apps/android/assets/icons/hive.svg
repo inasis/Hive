@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#caff92"/>
+      <stop offset="1" stop-color="#a7df68"/>
+    </linearGradient>
+    <radialGradient id="surface" cx="50%" cy="38%" r="72%">
+      <stop offset="0" stop-color="#1e271b"/>
+      <stop offset="1" stop-color="#101512"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="230" fill="url(#surface)"/>
+  <rect x="160" y="160" width="704" height="704" rx="190" fill="url(#tile)"/>
+  <path d="M300 270h126v195h172V270h126v484H598V578H426v176H300z" fill="#101512"/>
+</svg>

@@ -1,0 +1,40 @@
+{
+  "name": "hive",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electrobun desktop and Android clients for AI coding provider sessions over Hive daemon, SSH, or relay connections.",
+  "license": "BSD-2-Clause",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "workspaces": [
+    "apps/desktop",
+    "apps/android"
+  ],
+  "bin": {
+    "hive": "dist/cli.js",
+    "hive-codex": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "daemon:build": "node scripts/build-daemon.mjs",
+    "daemon:package": "npm run daemon:build && node scripts/package-daemon.mjs",
+    "daemon": "node scripts/daemon-supervisor.mjs daemon --mobile",
+    "dev:app": "npm run dev:web --workspace=hive-desktop",
+    "build:app": "npm run build:web --workspace=hive-desktop",
+    "android:build": "npm run build:app && bash scripts/build-android.sh",
+    "desktop:dev": "npm run dev:native --workspace=hive-desktop",
+    "desktop:build": "npm run build:native --workspace=hive-desktop"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.12",
+    "postject": "^1.0.0-alpha.6",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.1.0",
+    "selfsigned": "^5.5.0"
+  }
+}
