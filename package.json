@@ -18,7 +18,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "daemon:build": "tsc -p tsconfig.json",
+    "daemon:build": "node scripts/build-daemon.mjs",
+    "daemon:package": "npm run daemon:build && node scripts/package-daemon.mjs",
     "daemon": "node scripts/daemon-supervisor.mjs daemon --mobile",
     "dev:app": "npm run dev:web --workspace=hive-desktop",
     "build:app": "npm run build:web --workspace=hive-desktop",
@@ -28,6 +29,8 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "^0.25.12",
+    "postject": "^1.0.0-alpha.6",
     "typescript": "^5.7.0"
   },
   "dependencies": {

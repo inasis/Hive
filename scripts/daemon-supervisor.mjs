@@ -13,7 +13,7 @@ if (daemonArgs[0] !== "daemon") {
   process.exit(2);
 }
 
-const build = spawnSync(process.execPath, ["node_modules/typescript/bin/tsc", "-p", "tsconfig.json"], {
+const build = spawnSync(process.execPath, ["scripts/build-daemon.mjs"], {
   cwd: process.cwd(),
   stdio: "inherit",
 });
@@ -81,7 +81,8 @@ async function becomeSupervisor() {
 
   async function startChild() {
     if (stopping) return;
-    const next = spawn(process.execPath, ["dist/cli.js", ...daemonArgs], {
+    const daemonExecutable = join(process.cwd(), "artifacts", "daemon", `hive-linux-${process.arch}`);
+    const next = spawn(daemonExecutable, daemonArgs, {
       cwd: process.cwd(),
       env: process.env,
       stdio: "inherit",

@@ -47,13 +47,14 @@ for await (const line of lines) {
 export function createKiroA2AMcpServers(target: string): JsonObject[] {
   const config = resolveKiroA2AEndpoint(target);
   if (!config) return [];
+  const isLocalSingleExecutable = target === LOCAL_WORKSPACE_TARGET && process.argv[1] === process.execPath;
   const command = target === LOCAL_WORKSPACE_TARGET
     ? process.execPath
     : process.env.HIVE_A2A_REMOTE_NODE_BIN?.trim() || "node";
   return [{
     name: "hive-a2a",
     command,
-    args: ["--input-type=module", "-e", MCP_PROXY_SCRIPT],
+    args: isLocalSingleExecutable ? ["a2a-mcp", "--stdio"] : ["--input-type=module", "-e", MCP_PROXY_SCRIPT],
     env: [
       { name: "HIVE_A2A_MCP_URL", value: config.endpoint },
       { name: "HIVE_A2A_HTTP_TOKEN", value: config.token },

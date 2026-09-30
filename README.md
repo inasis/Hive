@@ -70,7 +70,16 @@ npm ci
 npm run daemon
 ```
 
-`npm run daemon` builds and starts the daemon. Re-running it restarts a daemon managed by this command with its original CLI arguments and environment. If a connected client loses the daemon during prompt submission, it keeps the exact request in memory and retries once after provider restoration, unless it already received that thread's turn-start event. Prompts are not written to disk. The command prints LAN addresses such as `wss://192.168.x.x:4753/rpc`, a certificate SHA-256 fingerprint, and a pairing token. Enter all three once in the Linux desktop or Android pairing screen. On Windows, open **Settings → Connection → Hive 데몬에 연결** first, then enter the same values in the pairing screen. If it prints multiple addresses, choose the one on the same Wi-Fi as the client. Allow TCP port 4753 through the computer's firewall. The clients pin the daemon certificate to the fingerprint you entered. The daemon stores its generated certificate and token under `~/.config/hive/` for later runs. Stop it with Ctrl+C.
+`npm run daemon` builds and starts the Linux daemon as a standalone executable. `npm run daemon:build` builds it without starting it; the binary is written to `artifacts/daemon/hive-linux-x64` or `artifacts/daemon/hive-linux-arm64` for the build host's architecture. To create a user distribution, run `npm run daemon:package` on Linux with Node.js 20.12+ (or Node.js 21.7+ for 21.x). It writes `artifacts/daemon/Hive-daemon-linux-<arch>.tar.gz` and a `.sha256` checksum. The archive includes the executable, setup notes, and license notices; Node.js is not needed on the destination computer. The binary targets glibc-based Linux. GitHub Actions publishes the x64 archive and checksum to each GitHub Release created from a `v*` tag. You can run a built binary directly with `./artifacts/daemon/hive-linux-<arch> daemon --mobile`. Re-running `npm run daemon` restarts a daemon managed by this command with its original CLI arguments and environment. If a connected client loses the daemon during prompt submission, it keeps the exact request in memory and retries once after provider restoration, unless it already received that thread's turn-start event. Prompts are not written to disk. The command prints LAN addresses such as `wss://192.168.x.x:4753/rpc`, a certificate SHA-256 fingerprint, and a pairing token. Enter all three once in the Linux desktop or Android pairing screen. On Windows, open **Settings → Connection → Hive 데몬에 연결** first, then enter the same values in the pairing screen. If it prints multiple addresses, choose the one on the same Wi-Fi as the client. Allow TCP port 4753 through the computer's firewall. The clients pin the daemon certificate to the fingerprint you entered. The daemon stores its generated certificate and token under `~/.config/hive/` for later runs. Stop it with Ctrl+C.
+
+After downloading the x64 release files, verify and start the daemon:
+
+```sh
+sha256sum -c Hive-daemon-linux-x64.tar.gz.sha256
+tar -xzf Hive-daemon-linux-x64.tar.gz
+cd Hive-daemon-linux-x64
+./hive daemon --mobile
+```
 
 For access from outside your home network, forward TCP port 4753 on your router to port 4753 on the daemon computer (for example, `192.168.0.5`) and allow it through the computer's firewall. To have the daemon print your public address, run:
 

@@ -37,7 +37,18 @@ npm ci
 npm run daemon
 ```
 
-`npm run daemon`은 데몬을 빌드하고 시작합니다. 이 명령을 다시 실행하면 같은 명령으로 관리하는 데몬을 기존 CLI 인자와 환경으로 재시작합니다. 연결된 클라이언트는 prompt 제출 중 데몬 연결이 끊기면 동일 요청을 메모리에 보관했다가 provider 복구 뒤 한 번 재전송합니다. 해당 thread의 turn 시작 이벤트를 이미 받은 경우에는 재전송하지 않으며 prompt를 디스크에 쓰지 않습니다. 데몬이 `wss://192.168.x.x:4753/rpc` 형태의 주소, 인증서 SHA-256 지문, 페어링 토큰을 출력합니다. Linux 데스크톱이나 Android 연결 화면에서 세 값을 한 번 입력하고, 컴퓨터 방화벽에서 TCP 4753을 허용합니다. 주소가 여러 개라면 괄호 안 네트워크 인터페이스 이름을 보고 클라이언트와 같은 Wi‑Fi 주소를 선택하세요. 인증서와 토큰은 `~/.config/hive/`에 저장됩니다. 데몬을 종료하려면 터미널에서 `Ctrl+C`를 누르세요.
+`npm run daemon`은 standalone Linux 실행 파일을 빌드하고 시작합니다. `npm run daemon:build`는 실행 파일만 만들고, 빌드 컴퓨터의 아키텍처에 따라 `artifacts/daemon/hive-linux-x64` 또는 `hive-linux-arm64`에 저장합니다. 최종 사용자용 압축 패키지와 SHA-256 체크섬은 Linux에서 Node.js 20.12 이상(21.x는 21.7 이상)으로 `npm run daemon:package`를 실행해 `artifacts/daemon/Hive-daemon-linux-<arch>.tar.gz`에 만듭니다. 패키지에는 실행 파일, 설치 안내, Hive·Node.js·포함된 라이브러리의 라이선스 안내가 들어가며, 실행 대상 컴퓨터에는 Node.js가 필요하지 않습니다. 실행 파일은 glibc 기반 Linux용입니다. GitHub Actions는 `v*` 태그로 만든 GitHub Release에 x64 패키지와 체크섬을 자동 첨부합니다.
+
+GitHub Release에서 x64 패키지와 체크섬을 받은 뒤 검증하고 실행합니다.
+
+```sh
+sha256sum -c Hive-daemon-linux-x64.tar.gz.sha256
+tar -xzf Hive-daemon-linux-x64.tar.gz
+cd Hive-daemon-linux-x64
+./hive daemon --mobile
+```
+
+저장소에서 `npm run daemon`을 다시 실행하면 이 명령으로 관리하는 데몬을 기존 CLI 인자와 환경으로 재시작합니다. 연결된 클라이언트는 prompt 제출 중 데몬 연결이 끊기면 동일 요청을 메모리에 보관했다가 provider 복구 뒤 한 번 재전송합니다. 해당 thread의 turn 시작 이벤트를 이미 받은 경우에는 재전송하지 않으며 prompt를 디스크에 쓰지 않습니다. 데몬이 `wss://192.168.x.x:4753/rpc` 형태의 주소, 인증서 SHA-256 지문, 페어링 토큰을 출력합니다. Linux 데스크톱이나 Android 연결 화면에서 세 값을 한 번 입력하고, 컴퓨터 방화벽에서 TCP 4753을 허용합니다. 주소가 여러 개라면 괄호 안 네트워크 인터페이스 이름을 보고 클라이언트와 같은 Wi‑Fi 주소를 선택하세요. 인증서와 토큰은 `~/.config/hive/`에 저장됩니다. 데몬을 종료하려면 터미널에서 `Ctrl+C`를 누르세요.
 
 외부 네트워크에서도 공인 IP로 연결하려면 라우터에서 TCP 4753을 데몬 컴퓨터의 LAN IP와 포트 4753으로 전달하고, 호스트 방화벽에서 포트를 허용하세요. 공인 주소를 출력하려면 다음 명령에서 예시 IP를 실제 공인 IP로 바꿉니다.
 

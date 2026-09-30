@@ -16,4 +16,5 @@ apps/android/android/app/src/main/assets/public/
 apps/android/android/app/src/main/assets/capacitor.config.json
 apps/android/android/app/src/main/assets/capacitor.plugins.json
 artifacts/android/*.apk
+artifacts/daemon/
 dist/
