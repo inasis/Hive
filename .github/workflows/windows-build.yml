@@ -46,7 +46,7 @@ jobs:
       - name: Confirm Windows executable
         shell: pwsh
         run: |
-          $executables = Get-ChildItem apps/desktop/artifacts -Recurse -File -Filter '*.exe'
+          $executables = Get-ChildItem apps/desktop/build/stable-win-x64 -Recurse -File -Filter '*.exe'
           if (-not $executables) { throw 'The Windows build did not produce an .exe.' }
           $executables | ForEach-Object { Write-Host $_.FullName }
 
