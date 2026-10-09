@@ -1,4 +1,4 @@
-import type { PreferencesPort } from "../shared/preferences";
+import type { PreferencesPort } from "../../../../src/presentation/shared/preferences";
 
 /** Browser-backed preference storage shared by desktop and Capacitor renderers. */
 export const browserPreferences: PreferencesPort = {

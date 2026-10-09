@@ -2,27 +2,28 @@
   "name": "hive",
   "version": "0.1.0",
   "private": true,
-  "description": "Electrobun desktop and Android clients for AI coding provider sessions over Hive daemon, SSH, or relay connections.",
+  "description": "Electrobun desktop and Android clients for AI coding provider sessions over Hive daemon WSS or SSH connections.",
   "license": "BSD-2-Clause",
   "engines": {
     "node": ">=20"
   },
   "type": "module",
   "workspaces": [
+    "apps/web",
     "apps/desktop",
     "apps/android"
   ],
   "bin": {
-    "hive": "dist/cli.js",
-    "hive-codex": "dist/cli.js"
+    "hive": "dist/apps/cli/src/main.js",
+    "hive-codex": "dist/apps/cli/src/main.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build-root.mjs",
     "daemon:build": "node scripts/build-daemon.mjs",
     "daemon:package": "npm run daemon:build && node scripts/package-daemon.mjs",
-    "daemon": "node scripts/daemon-supervisor.mjs daemon --mobile",
+    "daemon": "node scripts/daemon-supervisor.mjs daemon",
     "dev:app": "npm run dev:web --workspace=hive-desktop",
-    "build:app": "npm run build:web --workspace=hive-desktop",
+    "build:app": "npm run build --workspace=hive-web",
     "android:build": "npm run build:app && bash scripts/build-android.sh",
     "desktop:dev": "npm run dev:native --workspace=hive-desktop",
     "desktop:build": "npm run build:native --workspace=hive-desktop"

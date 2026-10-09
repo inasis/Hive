@@ -1,0 +1,34 @@
+{
+  "extends": "../desktop/.hutch/devkit/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "baseUrl": ".",
+    "paths": {
+      "electrobun/view": ["../desktop/.hutch/devkit/api/browser/index.ts"],
+      "mermaid": ["node_modules/mermaid"]
+    }
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "../desktop/src/platform/**/*.ts",
+    "../desktop/src/platform/**/*.tsx",
+    "../desktop/src/presentation/**/*.tsx",
+    "../../src/presentation/**/*.ts",
+    "../../src/presentation/**/*.tsx",
+    "vite.config.ts"
+  ]
+}

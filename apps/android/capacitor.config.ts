@@ -3,7 +3,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 const config: CapacitorConfig = {
   appId: "dev.hive.codexbridge",
   appName: "Hive",
-  webDir: "../desktop/dist",
+  webDir: "../web/dist",
   server: {
     androidScheme: "https",
   },

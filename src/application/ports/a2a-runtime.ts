@@ -1,116 +1,44 @@
+import type { AdapterErrorCode } from "../../domain/a2a-adapter.js";
 import type {
-  AdapterErrorCode,
-  AdapterError,
-  AdapterCapabilities,
-  AgentInput,
-  AgentHistoryEntry,
-  AgentPermissionProfile,
-  AgentRoom,
-  AgentResult,
-  AgentSummary,
-  AgentTask,
-  AgentTaskRecord,
-  A2ATaskSubmission,
-  IntegrationEvidence,
-  NativeSession,
-  A2ARuntimeSnapshot,
-  AgentSelector,
-  TaskState,
-} from "../../domain/a2a.js";
+  A2AAgentHistoryEntryDto,
+  A2AAgentSessionToolRequestDto,
+  A2ACommunicationPermissionsDto,
+} from "../dto/a2a-collaboration.js";
+import type { NativeSession } from "../../application/dto/a2a-collaboration.js";
+import type { A2ARuntimeSnapshot } from "../dto/a2a-runtime-snapshot.js";
+import type {
+  AgentAdapter,
+  AgentAdapterDescriptor,
+} from "./a2a-agent-adapter.js";
+import type {
+  A2AAgentSummaryDto,
+  A2ARegisterAgentDto,
+  A2ARegisteredAgentDto,
+  A2ARoomDto,
+  A2ATaskRecordDto,
+  A2ATaskSubmissionDto,
+  A2ATaskWaitResultDto,
+} from "../dto/a2a-collaboration.js";
 
-export type IntegrationStatus = "VERIFIED" | "PARTIALLY_VERIFIED" | "EXPERIMENTAL" | "UNAVAILABLE" | "MANUAL_CONFIGURATION_REQUIRED";
+export type A2ATaskWaitResult = A2ATaskWaitResultDto;
 
-export type AgentAdapterDescriptor = {
-  readonly adapterId: string;
-  readonly provider: string;
-  readonly integrationStatus: IntegrationStatus;
-  readonly capabilities: Readonly<AdapterCapabilities>;
-  readonly evidence: IntegrationEvidence;
+export type A2APermissionSource = {
+  agentId: string;
+  provider: string;
+  session: NativeSession;
+  adapter: AgentAdapter;
 };
 
-export type AgentExecutionContext = {
-  signal: AbortSignal;
-  history: AgentHistoryEntry[];
-  /** The registered source and target only; query the room explicitly when routing needs more agents. */
-  agents: AgentSummary[];
-  /** Permissions of the agent that requested this task, when the adapter can identify them. */
-  inheritedPermissions?: AgentPermissionProfile;
-  /** Queue a child request and resolve once accepted; the current task never waits for its result. */
-  delegate(input: AgentSessionToolRequest): Promise<AgentTaskRecord>;
-};
+/** Narrow directory queries used to execute and record tasks. */
+export interface A2ATaskDirectoryPort {
+  getSession(agentId: string): NativeSession | undefined;
+  getAgentSummary(agentId: string): A2AAgentSummaryDto | undefined;
+  addHistory(agentId: string, entries: readonly A2AAgentHistoryEntryDto[]): void;
+}
 
-export type AgentSessionToolRequest = {
-  /** Selects an asynchronous A2A request or a single-responder A2B bonded request. */
-  interaction?: "A2A" | "A2B";
-  targetAgent?: string;
-  targetSessionName?: string;
-  selector?: AgentSelector;
-  message: string;
-  timeoutMs?: number;
-  /** Marks this message as the response to the active A2A task and gives the recipient a forward-or-finish choice. */
-  responseForTaskId?: string;
-  /** Links a result callback to the asynchronous request that created it. */
-  callbackForTaskId?: string;
-};
-
-export type A2ATaskWaitResult = {
-  completed: boolean;
-  taskId: string;
-  state: TaskState;
-  result?: AgentResult;
-  error?: AdapterError;
-};
-
-export type AgentPromptAddress = { target: string; threadId: string };
-
-/** Product-specific session operations stay behind this application-owned port. */
-export interface AgentAdapter extends AgentAdapterDescriptor {
-  /** Preserve the target session's own permission configuration instead of inheriting caller permissions. */
-  readonly permissionHandling?: "inherit-caller" | "preserve-target";
-
-  discoverSessions(): Promise<NativeSession[]>;
-
-  /** Create a persistent provider session beside the caller when a named/ID target is missing. */
-  createSession?(source: NativeSession, input: {
-    sessionName?: string;
-    inheritedPermissions?: AgentPermissionProfile;
-  }): Promise<NativeSession>;
-
-  getDiscoveryFailures?(): AdapterErrorCode[];
-
-  isAvailable(session: NativeSession): Promise<boolean>;
-
-  /** Match a provider-visible session ID to the adapter-owned native session handle. */
-  matchesNativeSession?(session: NativeSession, nativeSessionId: string): boolean;
-
-  /** Match a provider target when the native tool call does not include a session ID. */
-  matchesNativeTarget?(session: NativeSession, target: string): boolean;
-
-  /** Provider address used by Hive to resume a native session with hidden queued A2A context. */
-  getPromptAddress?(session: NativeSession): AgentPromptAddress | undefined;
-
-  /** Whether this particular native session received a callable A2A tool. */
-  canDelegate?(session: NativeSession): boolean;
-
-  /** Read the effective provider permission profile, optionally from the active task's isolated thread. */
-  getPermissionProfile?(session: NativeSession, activeTask?: AgentTask): Promise<AgentPermissionProfile | undefined>;
-
-  /** Resolve an active task from a provider-native session/thread ID when the MCP client supplies one. */
-  getActiveTaskIdForSession?(session: NativeSession, nativeSessionId: string): string | undefined;
-
-  /** Whether this adapter can apply the caller's permissions to this target session. */
-  canInheritPermissionProfile?(session: NativeSession, profile: AgentPermissionProfile): boolean;
-
-  /** Optional observation of a native turn already in progress outside this task runtime. */
-  isBusy?(session: NativeSession): Promise<boolean>;
-
-  execute(session: NativeSession, task: AgentTask, context: AgentExecutionContext): Promise<AgentResult>;
-
-  resume(session: NativeSession, input: AgentInput, context: AgentExecutionContext): Promise<AgentResult>;
-
-  attach?(session: NativeSession, input: AgentInput, context: AgentExecutionContext): Promise<AgentResult>;
-
-  cancel(session: NativeSession, taskId: string): Promise<void>;
+/** Caller lookup used only when inheriting a task's effective permissions. */
+export interface A2APermissionSourceDirectoryPort {
+  getPermissionSource(agentId: string, roomId: string): A2APermissionSource | undefined;
 }
 
 /** Persistence port for runtime state; native conversation context remains provider-owned. */
@@ -125,15 +53,15 @@ export interface A2AWorkspaceLockPort {
 }
 
 export type A2ARuntimeEvent =
-  | { type: "room.updated"; room: AgentRoom }
-  | { type: "agent.updated"; agent: AgentSummary }
-  | { type: "task.updated"; task: AgentTaskRecord };
+  | { type: "room.updated"; room: A2ARoomDto }
+  | { type: "agent.updated"; agent: A2AAgentSummaryDto }
+  | { type: "task.updated"; task: A2ATaskRecordDto };
 
 export type A2ARuntimeEventHandler = (event: A2ARuntimeEvent) => void;
 
 export type A2ADiscoveryResult = {
-  registered: AgentSummary[];
-  skipped: Array<{ adapterId: string; code: import("../../domain/a2a.js").AdapterErrorCode }>;
+  registered: A2AAgentSummaryDto[];
+  skipped: Array<{ adapterId: string; code: AdapterErrorCode }>;
 };
 
 export type A2AAgentProfileUpdate = {
@@ -143,36 +71,56 @@ export type A2AAgentProfileUpdate = {
 
 /** Transport-facing application port. HTTP, WebSocket, and local callers share these semantics. */
 export interface A2ARuntimePort {
-  listRooms(): AgentRoom[];
-  listAgents(roomId: string): AgentSummary[];
-  listAgentsForAgent(agentId: string): AgentSummary[];
-  findAgentForNativeSession(provider: string, nativeSessionId: string): AgentSummary | undefined;
-  resolveNativeSessionAgent(provider: string, nativeSessionId: string): Promise<AgentSummary | undefined>;
-  findActiveAgentForTarget(provider: string, target: string): Promise<AgentSummary | undefined>;
-  resolveActiveAgentForTarget(provider: string, target: string): Promise<AgentSummary | undefined>;
-  resolveActiveAgentForTask(provider: string, agentId: string): Promise<AgentSummary | undefined>;
+  listRooms(): A2ARoomDto[];
+  listAgents(roomId: string): A2AAgentSummaryDto[];
+  listAgentsForAgent(agentId: string): A2AAgentSummaryDto[];
+  /** Discover sessions in the caller agent's room without exposing room lookup to provider transports. */
+  ensureSessionsDiscoveredForAgent(agentId: string): Promise<void>;
+  findAgentForNativeSession(provider: string, nativeSessionId: string): A2AAgentSummaryDto | undefined;
+  resolveNativeSessionAgent(provider: string, nativeSessionId: string): Promise<A2AAgentSummaryDto | undefined>;
+  findActiveAgentForTarget(provider: string, target: string): Promise<A2AAgentSummaryDto | undefined>;
+  resolveActiveAgentForTarget(provider: string, target: string): Promise<A2AAgentSummaryDto | undefined>;
+  resolveActiveAgentForTask(provider: string, callerAgentId: string, nativeSessionId?: string): Promise<A2AAgentSummaryDto | undefined>;
+  /** Apply the active persona's role-space permissions to a registered provider session. */
+  setSessionCommunicationPermissions?(provider: string, nativeSessionId: string, permissions: A2ACommunicationPermissionsDto): Promise<void>;
   /** Persist an agent-originated request and return its accepted task record without waiting for completion. */
-  sendFromNativeSession(provider: string, nativeSessionId: string, input: AgentSessionToolRequest): Promise<AgentTaskRecord>;
+  sendFromNativeSession(provider: string, nativeSessionId: string, input: A2AAgentSessionToolRequestDto): Promise<A2ATaskRecordDto>;
   /** Resolve the caller, persist the request, and return its accepted task record without waiting for completion. */
-  sendFromActiveSession(provider: string, target: string, input: AgentSessionToolRequest): Promise<AgentTaskRecord>;
+  sendFromActiveSession(provider: string, target: string, input: A2AAgentSessionToolRequestDto): Promise<A2ATaskRecordDto>;
   /** Persist an agent-originated request or result callback and return once it is accepted. */
-  sendFromAgent(agentId: string, input: AgentSessionToolRequest): Promise<AgentTaskRecord>;
+  sendFromAgent(agentId: string, input: A2AAgentSessionToolRequestDto): Promise<A2ATaskRecordDto>;
   /** Legacy compatibility read; native agents are not given this blocking operation. */
   waitForTask(taskId: string, waitMs?: number): Promise<A2ATaskWaitResult>;
-  getTask(taskId: string): AgentTaskRecord | undefined;
-  getTaskGraph(rootTaskId: string): AgentTaskRecord[];
-  enqueueTask(input: A2ATaskSubmission): Promise<AgentTaskRecord>;
-  submitTask(input: A2ATaskSubmission): Promise<AgentTaskRecord>;
-  cancelTask(taskId: string): Promise<AgentTaskRecord>;
+  getTask(taskId: string): A2ATaskRecordDto | undefined;
+  getTaskGraph(rootTaskId: string): A2ATaskRecordDto[];
+  enqueueTask(input: A2ATaskSubmissionDto): Promise<A2ATaskRecordDto>;
+  submitTask(input: A2ATaskSubmissionDto): Promise<A2ATaskRecordDto>;
+  cancelTask(taskId: string): Promise<A2ATaskRecordDto>;
   subscribe(handler: A2ARuntimeEventHandler): () => void;
 }
+
+/** Minimal runtime operations used by provider-hosted A2A tools. */
+export type A2AAgentToolRuntimePort = Pick<
+  A2ARuntimePort,
+  | "listAgentsForAgent"
+  | "ensureSessionsDiscoveredForAgent"
+  | "resolveNativeSessionAgent"
+  | "resolveActiveAgentForTarget"
+  | "resolveActiveAgentForTask"
+  | "sendFromNativeSession"
+  | "sendFromAgent"
+  | "waitForTask"
+>;
 
 /** Administrative operations are kept distinct from the remote task transport surface. */
 export interface A2ARuntimeAdminPort extends A2ARuntimePort {
   listAdapters(): AgentAdapterDescriptor[];
-  createRoom(roomId: string, name: string): Promise<AgentRoom>;
+  createRoom(roomId: string, name: string): Promise<A2ARoomDto>;
+  registerAgent(roomId: string, input: A2ARegisterAgentDto): Promise<A2ARegisteredAgentDto>;
   discoverSessions(roomId: string, adapterId?: string): Promise<A2ADiscoveryResult>;
   ensureSessionsDiscovered(roomId: string): Promise<void>;
-  refreshAvailability(roomId: string): Promise<AgentSummary[]>;
-  updateAgentProfile(agentId: string, update: A2AAgentProfileUpdate): Promise<AgentSummary>;
+  invalidateSessionDiscovery(): void;
+  markNativeSessionUnavailable(provider: string, target: string, nativeSessionId: string): Promise<boolean>;
+  refreshAvailability(roomId: string): Promise<A2AAgentSummaryDto[]>;
+  updateAgentProfile(agentId: string, update: A2AAgentProfileUpdate): Promise<A2AAgentSummaryDto>;
 }

@@ -58,9 +58,13 @@ export type CodexCliEvent = {
   | { type: "fileApproval"; requestId: number | string; reason?: string; itemId?: string }
 );
 
-/** Codex session operations needed by the interactive CLI, without app-server DTOs. */
+/** Codex thread opening needed by the interactive CLI, without app-server DTOs. */
 export interface CodexCliSessionPort {
   openSession(target: string, threadId: string): Promise<CodexCliOpenedSession>;
+}
+
+/** Codex CLI skill lookup and prompt preparation operations. */
+export interface CodexCliSkillPort {
   listCliSkills(target: string, threadId: string): Promise<SkillCatalog>;
   buildSkillInput(target: string, threadId: string, skill: AvailableSkill, request: string): Promise<string>;
 }

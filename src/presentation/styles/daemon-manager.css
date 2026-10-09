@@ -1,0 +1,76 @@
+
+.daemon-root { margin-bottom: 12px; }
+.daemon-root-heading { display: flex; align-items: center; gap: 4px; padding: 6px 4px; border-radius: 8px; }
+.daemon-root.active > .daemon-root-heading { color: var(--text-display); background: var(--sidebar-menu-background); }
+.daemon-root.active > .daemon-root-heading .icon-button,
+.daemon-root.active > .daemon-root-heading .session-row-action { color: var(--text-display); }
+.daemon-root.active > .daemon-root-heading .icon-button:hover { border-color: var(--text-display); color: var(--text-display); background: var(--sidebar-menu-background); }
+.daemon-root.active > .daemon-root-heading button:focus-visible { outline-color: var(--text-display); }
+.daemon-root-select { display: flex; flex: 1; min-width: 0; flex-direction: column; align-items: flex-start; gap: 3px; border: 0; background: transparent; color: inherit; padding: 3px; cursor: pointer; }
+.daemon-root-select b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.daemon-root-select:disabled { cursor: default; opacity: .6; }
+.daemon-root .project-group { margin-left: 12px; }
+.daemon-manager-screen { position: fixed; inset: 0; z-index: 1000; overflow-y: auto; }
+.daemon-manager-card { max-height: calc(100dvh - 48px); overflow-y: auto; }
+.daemon-manager-title { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.daemon-manager-title h1 { margin: 0; }
+.daemon-manager-list { display: grid; gap: 10px; margin: 18px 0; }
+.daemon-manager-item { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px; border: 1px solid rgba(128,128,128,.25); border-radius: 10px; }
+.daemon-manager-item > div:first-child { display: grid; gap: 5px; flex: 1; min-width: 0; }
+.daemon-manager-item small { overflow-wrap: anywhere; opacity: .7; }
+.daemon-manager-item span { font-size: 12px; }
+.daemon-manager-item p { width: 100%; margin: 0; font-size: 12px; }
+.daemon-manager-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.daemon-manager-rename { min-height: 36px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; font: 13px var(--font-mono); }
+.daemon-manager-rename svg { width: 13px; height: 13px; }
+.daemon-root-rename { flex: 0 0 24px; opacity: 0; }
+.daemon-root-heading:hover .daemon-root-rename,
+.daemon-root-heading:focus-within .daemon-root-rename,
+.mobile-app .daemon-root-rename { opacity: 1; }
+.daemon-rename-backdrop { z-index: 1200; }
+.daemon-manager-screen .dialog-secondary,
+.daemon-rename-backdrop .dialog-secondary { color: var(--pure-black); background: var(--pure-white); }
+.daemon-manager-screen .dialog-secondary:hover,
+.daemon-rename-backdrop .dialog-secondary:hover { color: var(--pure-black); background: var(--pure-white); }
+
+.mobile-pairing-screen {
+  position: relative;
+  width: 100%;
+  min-height: 100dvh;
+  padding: max(28px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+  display: grid;
+  place-items: center;
+  color: var(--text-primary);
+  background: var(--background);
+}
+.windows-pairing-screen { padding-top: max(88px, calc(env(safe-area-inset-top) + 72px)); }
+.windows-pairing-titlebar { position: absolute; top: 0; right: 0; left: 0; height: 59px; padding-left: 18px; display: flex; align-items: center; justify-content: space-between; color: var(--text-secondary); border-bottom: 1px solid var(--border); font: 13px var(--font-mono); }
+.windows-pairing-titlebar .windows-window-controls { margin-right: 0; }
+.mobile-pairing-card {
+  width: min(100%, 420px);
+  padding: 26px 22px 22px;
+  border: 1px solid var(--border-visible);
+  background: var(--surface);
+}
+.mobile-pairing-mark {
+  width: 42px;
+  height: 42px;
+  margin-bottom: 27px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-visible);
+  color: var(--text-display);
+  font: 500 19px var(--font-mono);
+}
+.mobile-pairing-card h1 { margin: 8px 0 9px; color: var(--text-display); font-size: 26px; font-weight: 500; letter-spacing: -.04em; }
+.mobile-pairing-card > p { margin: 0 0 24px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+.mobile-pairing-card form { display: grid; gap: 9px; }
+.mobile-pairing-card label { margin-top: 7px; color: var(--text-secondary); font: 13px var(--font-mono); }
+.mobile-pairing-card input { width: 100%; min-height: 45px; padding: 0 12px; border: 1px solid var(--border-visible); border-radius: 0; color: var(--text-display); background: var(--surface-well); font: 13px var(--font-mono); }
+.mobile-pairing-card input::placeholder { color: var(--text-disabled); }
+.mobile-pairing-card .dialog-primary { width: 100%; min-height: 46px; margin-top: 9px; cursor: pointer; }
+.mobile-pairing-error { padding: 9px 0; border-bottom: 1px solid var(--error); color: var(--error); font-size: 13px; line-height: 1.6; }
+.mobile-pairing-note { margin-top: 21px; color: var(--text-secondary); font: 13px/1.8 var(--font-mono); }
+.mobile-pairing-note code { color: var(--text-primary); }
+.pairing-alternate { width: 100%; min-height: 38px; margin-top: 16px; padding: 8px 0; border: 0; border-top: 1px solid var(--border); color: var(--text-secondary); background: transparent; text-align: left; font-size: 13px; cursor: pointer; }
+.pairing-alternate:hover { color: var(--text-primary); }

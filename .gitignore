@@ -7,6 +7,7 @@ cli.log
 
 # Electrobun desktop and Capacitor Android apps
 node_modules/
+apps/web/dist/
 apps/desktop/build/
 apps/desktop/dist/
 apps/desktop/.hutch/

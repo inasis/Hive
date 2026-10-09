@@ -1,4 +1,4 @@
-import type { GtkSettings, GtkTitleButtonRaster } from "../shared/bridge.js";
+import type { GtkSettings, GtkTitleButtonRaster } from "../../../../src/presentation/shared/bridge.js";
 
 type JsonObject = { [key: string]: unknown };
 type ButtonState = GtkSettings["button"]["normal"];
@@ -24,13 +24,27 @@ function parseTitleButtonRaster(value: unknown): GtkTitleButtonRaster | undefine
       !isString(value.normal) || !isString(value.hover) || !isString(value.active) || !isString(value.disabled)) {
     return undefined;
   }
+  const normal = value.normal;
+  const hover = value.hover;
+  const active = value.active;
+  const disabled = value.disabled;
+  const backdrop = isObject(value.backdrop) && isString(value.backdrop.normal) && isString(value.backdrop.hover) &&
+    isString(value.backdrop.active) && isString(value.backdrop.disabled)
+    ? {
+      normal: value.backdrop.normal,
+      hover: value.backdrop.hover,
+      active: value.backdrop.active,
+      disabled: value.backdrop.disabled,
+    }
+    : { normal, hover, active, disabled };
   return {
     width: value.width,
     height: value.height,
-    normal: value.normal,
-    hover: value.hover,
-    active: value.active,
-    disabled: value.disabled,
+    normal,
+    hover,
+    active,
+    disabled,
+    backdrop,
   };
 }
 

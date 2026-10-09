@@ -14,6 +14,7 @@ export type AssistantProviderCapabilities = {
   skills: boolean;
   slashCommands: boolean;
   images: boolean;
+  fileAttachments: boolean;
   /** Provider protocol can request file operations from Hive's workspace adapter. */
   workspaceFileRequests: boolean;
   /** Provider protocol can request terminal operations from Hive's terminal adapter. */
@@ -39,7 +40,8 @@ const providers = [
       sessionModes: true,
       skills: true,
       slashCommands: true,
-      images: false,
+      images: true,
+      fileAttachments: true,
       workspaceFileRequests: false,
       terminalRequests: false,
     },
@@ -63,6 +65,31 @@ const providers = [
       skills: true,
       slashCommands: true,
       images: false,
+      fileAttachments: false,
+      workspaceFileRequests: false,
+      terminalRequests: false,
+    },
+  },
+  {
+    id: "pi",
+    name: "Pi",
+    capabilities: {
+      models: true,
+      requiresModelBeforePrompt: true,
+      reasoningEffort: true,
+      permissionProfileCreation: false,
+      permissionProfileUpdates: false,
+      turnSteering: true,
+      approvals: false,
+      createNamedSessions: true,
+      renameSessions: true,
+      forks: true,
+      persistentSideChats: false,
+      sessionModes: false,
+      skills: true,
+      slashCommands: true,
+      images: true,
+      fileAttachments: false,
       workspaceFileRequests: false,
       terminalRequests: false,
     },
@@ -86,6 +113,7 @@ const providers = [
       skills: true,
       slashCommands: true,
       images: true,
+      fileAttachments: false,
       workspaceFileRequests: true,
       terminalRequests: true,
     },

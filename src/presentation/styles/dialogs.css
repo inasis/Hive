@@ -1,0 +1,51 @@
+
+.dialog-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, .8); }
+.connect-dialog, .approval-dialog { width: min(100%, 440px); padding: 20px; border: 1px solid var(--border-visible); background: var(--surface); }
+.model-settings-backdrop { place-items: end center; padding: 0 12px; }
+.model-settings-dialog { width: min(100%, 640px); max-height: min(76dvh, 560px); overflow: auto; margin: 0 auto; padding: 20px 22px max(18px, env(safe-area-inset-bottom)); }
+.model-settings-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 17px; }
+.model-settings-dialog .model-settings-heading h2 { margin: 7px 0 0; color: var(--text-display); font-size: 19px; font-weight: 500; }
+.model-settings-dialog .model-controls { display: grid; gap: 12px; }
+.model-settings-dialog .model-control { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 14px; align-items: center; margin: 0; white-space: normal; }
+.model-settings-dialog .model-control select { width: 100%; height: 38px; margin: 0; }
+.model-settings-dialog .dialog-help { margin: 12px 0 0; }
+.dialog-mark, .approval-mark { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--border-visible); color: var(--text-primary); background: transparent; }
+.dialog-mark svg, .approval-mark svg { width: 17px; height: 17px; }
+.connect-dialog h2, .approval-dialog h2 { margin: 15px 0 7px; color: var(--text-display); font-size: 19px; font-weight: 500; }
+.connect-dialog > p, .approval-dialog > p { margin: 0 0 16px; color: var(--text-secondary); font-size: 13px; line-height: 1.7; }
+.connect-dialog label { display: block; margin: 0 0 6px; color: var(--text-secondary); font: 13px var(--font-mono); }
+.connect-dialog input { width: 100%; height: 40px; padding: 0 10px; border: 0; border-bottom: 1px solid var(--border-visible); border-radius: 0; outline: 0; color: var(--text-display); background: var(--surface-well); font: 13px var(--font-mono); }
+.connect-dialog input:focus { border-color: var(--text-display); }
+.connect-dialog input::placeholder { color: var(--text-disabled); }
+.workspace-folder-field { margin: 0 0 13px; display: flex; align-items: stretch; gap: 8px; }
+.workspace-folder-field input { min-width: 0; width: auto; flex: 1; background: var(--surface); }
+.workspace-folder-field button { min-height: 40px; padding: 0 10px; display: inline-flex; align-items: center; gap: 7px; font: 13px var(--font-mono); white-space: nowrap; }
+.workspace-folder-field button svg { width: 14px; height: 14px; }
+.connect-dialog select { width: 100%; height: 40px; margin-bottom: 13px; padding: 0 10px; border: 0; border-bottom: 1px solid var(--border-visible); outline: 0; color: var(--text-display); background: var(--surface-well); font: 13px var(--font-mono); }
+.connect-dialog select:focus { border-color: var(--text-display); }
+.dialog-help { margin: 8px 0 13px; color: var(--text-secondary); font: 13px/1.7 var(--font-mono); }
+.dialog-help code { padding: 1px 4px; color: var(--text-primary); background: var(--surface-raised); }
+.permission-presets { margin: 5px 0 14px; padding: 10px; border: 1px solid var(--border-visible); }
+.permission-presets legend { padding: 0 5px; color: var(--text-secondary); font: 12px var(--font-mono); }
+.connect-dialog .permission-presets > label { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; margin: 7px 0; font: inherit; }
+.connect-dialog .permission-presets input[type="checkbox"] { width: 15px; height: 15px; margin: 2px 0 0; padding: 0; accent-color: var(--text-primary); }
+.permission-presets span { display: grid; gap: 2px; }
+.permission-presets b { color: var(--text-primary); font: 12px var(--font-mono); }
+.permission-presets small, .permission-presets p { color: var(--text-secondary); font: 11px/1.5 var(--font-mono); }
+.permission-presets p { margin: 9px 0 0; }
+.connection-error { max-height: 120px; overflow: auto; margin-bottom: 12px; padding: 8px 0; border-bottom: 1px solid var(--error); color: var(--error); font: 13px/1.6 var(--font-mono); white-space: pre-wrap; }
+.dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 7px; margin-top: 18px; }
+.dialog-actions button { min-height: 36px; padding: 0 13px; border-radius: 999px; font: 13px var(--font-mono); cursor: pointer; }
+.dialog-secondary { border: 1px solid var(--border-visible); color: var(--text-primary); background: var(--surface); }
+.dialog-secondary:hover { background: var(--surface-raised); color: var(--text-display); }
+.dialog-danger { min-height: 40px; padding: 0 16px; border: 1px solid var(--error); color: var(--pure-white); background: var(--error); font: 13px var(--font-mono); cursor: pointer; }
+.dialog-danger:hover:not(:disabled) { filter: brightness(.9); }
+.dialog-primary { min-height: 40px; padding: 0 16px; border: 1px solid var(--text-display); border-radius: 999px; color: var(--background); background: var(--text-display); font: 13px var(--font-mono); cursor: pointer; }
+.dialog-primary:hover:not(:disabled) { opacity: .8; }
+.approval-dialog { width: min(100%, 520px); }
+.approval-mark { color: var(--warning-ink); }
+.approval-details { padding: 10px 0; border-top: 1px solid var(--border-visible); border-bottom: 1px solid var(--border-visible); color: var(--text-primary); font-size: 13px; }
+.approval-details p { margin: 0 0 8px; }
+.approval-details pre { overflow: auto; margin: 0 0 8px; color: var(--text-display); font: 13px/1.6 var(--font-mono); white-space: pre-wrap; }
+.approval-details small { color: var(--text-secondary); font: 13px var(--font-mono); }
+

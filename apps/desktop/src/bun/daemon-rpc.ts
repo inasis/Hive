@@ -1,7 +1,7 @@
-import type { DaemonApiMethod } from "../../../../src/interfaces/contracts/daemon-api.js";
-import { parseDaemonApiRequest } from "../../../../src/interfaces/contracts/daemon-request.js";
-import { parseDaemonApiResponse } from "../../../../src/interfaces/contracts/daemon-response.js";
-import { createDaemonRequestPacket, type DaemonResponsePacket } from "../../../../src/interfaces/contracts/daemon-transport.js";
+import type { DaemonApiMethod } from "../../../../src/application/dto/daemon/daemon-api.js";
+import { parseDaemonApiRequest } from "../../../../src/application/dto/daemon/daemon-request.js";
+import { parseDaemonApiResponse } from "../../../../src/application/dto/daemon/daemon-response.js";
+import { createDaemonRequestPacket, type DaemonResponsePacket } from "../../../../src/application/dto/daemon/daemon-transport.js";
 
 const REQUEST_TIMEOUT_MS = 120_000;
 

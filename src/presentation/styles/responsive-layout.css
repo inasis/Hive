@@ -1,0 +1,172 @@
+@media (max-width: 1120px) {
+  .sidebar { width: 246px; min-width: 0; }
+  .files-side-panel { width: 246px; flex-basis: 246px; }
+  .conversation-inner { width: min(100% - 40px, 820px); }
+  .skills-panel { width: 250px; flex-basis: 250px; }
+}
+@media (max-width: 900px) {
+  .sidebar { width: 218px; min-width: 0; }
+  .files-side-panel { width: 218px; flex-basis: 218px; }
+  .skills-panel { position: absolute; z-index: 5; top: 0; right: 0; bottom: 0; width: 270px; }
+  .model-control select { width: 120px; }
+}
+@media (max-width: 680px) {
+  .model-control select { width: 105px; }
+  .connection-layout, .settings-section-connection .connection-layout { grid-template-columns: 1fr; gap: 16px; }
+  .skill-grid, .settings-section-skills .skill-grid, .mcp-tool-list { grid-template-columns: 1fr; }
+  .settings-section-skills .skills-page, .settings-section-mcp .mcp-settings-page, .settings-section-connection .connection-page, .settings-section-provider .provider-settings-page, .settings-section-daemons .daemon-settings-page { padding: 24px 16px; }
+  .settings-section-mcp .mcp-settings-panel, .settings-section-provider .provider-settings-panel, .settings-section-daemons .daemon-settings-panel { padding: 16px; }
+  .settings-section-connection .connection-form-card, .settings-section-connection .connection-info-card { padding: 16px; }
+  .role-space-settings-panel, .persona-settings-panel { gap: 16px; }
+}
+@media (max-width: 500px) {
+  .sidebar { width: 184px; min-width: 0; }
+  .files-side-panel { width: 184px; flex-basis: 184px; }
+  .model-control { gap: 3px; }
+  .model-controls { gap: 4px; }
+  .model-control select { width: 92px; }
+  .topbar { padding: 0 10px; }
+  .topbar-actions { gap: 4px; }
+  .conversation-inner { width: min(100% - 28px, 820px); }
+  .composer-area { padding: 9px 10px 10px; }
+  .settings-section-nav { padding: 6px 8px; }
+  .settings-section-item { padding: 0 8px; }
+  .settings-section-skills .feature-toolbar { align-items: stretch; flex-direction: column; }
+  .settings-section-skills .skill-search, .settings-section-skills .skill-provider-select { width: 100%; }
+}
+
+.desktop-sidebar-toggle-button { display: inline-grid; }
+.mobile-drawer-backdrop { display: none; }
+.daemon-settings-change { min-height: 38px; padding: 0 12px; margin-top: 6px; cursor: pointer; }
+
+ .app-shell:not(.mobile-app) .sidebar { --sidebar-menu-background: var(--surface-raised); background: var(--sidebar-menu-background); }
+
+@media (min-width: 681px) {
+  .mobile-app .desktop-sidebar-toggle-button { display: inline-grid; }
+  :root[data-theme="light"] .mobile-app .sidebar,
+  :root[data-theme="light"] .mobile-app .files-side-panel {
+    color-scheme: light;
+    --background: #ffffff;
+    --surface: #ffffff;
+    --surface-raised: #f3f3f3;
+    --surface-well: #f7f7f7;
+    --border: #e2e2e2;
+    --border-visible: #b8b8b8;
+    --text-disabled: #858585;
+    --text-secondary: #5f5f5f;
+    --text-primary: #242424;
+    --text-display: #000000;
+    --success-ink: #116331;
+    --warning-ink: #705700;
+    --interactive: #002f6c;
+    --sidebar-menu-background: var(--surface-raised);
+    background: var(--sidebar-menu-background);
+  }
+}
+
+@media (max-width: 680px) {
+  :root[data-theme="light"] .app-shell.mobile-app { background: #ffffff; }
+  :root[data-theme="light"] .mobile-app .sidebar { --sidebar-menu-background: var(--pure-white); background: var(--sidebar-menu-background); }
+  .mobile-app .sidebar {
+    position: fixed;
+    z-index: 31;
+    top: env(safe-area-inset-top);
+    bottom: env(safe-area-inset-bottom);
+    left: 0;
+    width: min(86vw, 330px);
+    min-width: 0;
+    border-right: 1px solid var(--border-visible);
+    will-change: transform;
+  }
+  .mobile-app .sidebar[data-drawer-motion="true"] {
+    overflow: visible;
+  }
+  .mobile-app .sidebar[data-drawer-motion="true"]::before {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--drawer-edge-fill);
+    transform: translateX(-100%);
+    background: inherit;
+    content: "";
+    pointer-events: none;
+  }
+  .mobile-drawer-backdrop {
+    position: fixed;
+    z-index: 30;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: rgba(0, 0, 0, .62);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .34s ease-out, visibility 0s linear .34s;
+  }
+  .mobile-drawer-backdrop.is-open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity .5s ease-out, visibility 0s;
+  }
+  .mobile-app .main-column { width: 100%; min-width: 0; }
+  .mobile-app .topbar { padding: 0 10px; }
+  .mobile-app .breadcrumbs { gap: 7px; }
+  .mobile-app .breadcrumbs b { min-width: 0; max-width: none; flex: 1; font-size: 13px; }
+  .mobile-app .desktop-sidebar-toggle-button { display: inline-grid; }
+  .mobile-app .topbar-actions { gap: 2px; }
+  .mobile-app .topbar-actions > .icon-button { flex: 0 0 32px; }
+  .mobile-app .topbar-actions > .file-panel-toggle { flex-basis: 32px; }
+  .mobile-app .topbar-actions .connection-badge { display: none; }
+  .mobile-app .topbar-actions .avatar { width: 25px; height: 25px; }
+  .mobile-app .files-side-panel { position: fixed; z-index: 31; top: env(safe-area-inset-top); right: 0; bottom: env(safe-area-inset-bottom); width: min(86vw, 330px); flex: none; border-left: 1px solid var(--border-visible); --surface-raised: var(--surface); }
+  .mobile-app .files-side-panel[data-drawer-motion="true"] {
+    overflow: visible;
+  }
+  .mobile-app .files-side-panel[data-drawer-motion="true"]::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: var(--drawer-edge-fill);
+    transform: translateX(100%);
+    background: inherit;
+    content: "";
+    pointer-events: none;
+  }
+  .mobile-app .window-controls, .mobile-app .window-resize-grips { display: none !important; }
+  .mobile-app .side-chat-tabs { min-height: 40px; padding: 0 7px; }
+  .mobile-app .side-chat-tab-list > button, .mobile-app .side-chat-tab-list .workspace-file-tab-select { min-height: 40px; padding: 0 7px; }
+  .mobile-app .side-chat-tabs > button.side-chat-add { width: 40px; min-width: 40px; min-height: 40px; flex-basis: 40px; padding: 0; }
+  .mobile-app .side-chat-tab-switcher .side-chat-add { width: 40px; min-width: 40px; min-height: 40px; flex-basis: 40px; }
+  .mobile-app .conversation-inner { width: calc(100% - 24px); }
+  .mobile-app .conversation-jump-latest { right: 12px; bottom: 12px; }
+  .mobile-app .composer-area { padding: 8px 9px max(10px, env(safe-area-inset-bottom)); }
+  .mobile-app .composer-wrap textarea { min-height: 55px; font-size: 16px; }
+  .mobile-app .connection-page, .mobile-app .skills-page, .mobile-app .settings-page { overflow: auto; }
+  .mobile-app .connection-page { padding: 20px 12px; }
+  .mobile-app.settings-section-connection .connection-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .mobile-app.settings-section-connection .connection-form-card, .mobile-app.settings-section-connection .connection-info-card { padding: 15px; }
+  .mobile-app .connection-form-card input { min-height: 44px; font-size: 14px; }
+  .mobile-app .connection-inline-fields { grid-template-columns: 1fr; }
+  .mobile-app.settings-section-skills .skills-page { padding: 20px 12px; }
+  .mobile-app .settings-page { padding: 20px 12px; }
+  .mobile-app .settings-panel { padding: 16px; }
+  .mobile-app .settings-preference-row { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .mobile-app .settings-theme-toggle { width: 100%; }
+  .mobile-app.settings-section-skills .skill-grid, .mobile-app.settings-section-mcp .mcp-tool-list { grid-template-columns: minmax(0, 1fr); }
+  .mobile-app .new-session-dialog, .mobile-app .connect-dialog, .mobile-app .approval-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 32px); overflow: auto; padding: 19px; }
+  .mobile-app .dialog-backdrop { padding: 12px; }
+  .mobile-app .model-settings-backdrop { padding: 0 8px; }
+  .mobile-app .model-settings-dialog { width: 100%; max-height: min(76dvh, 560px); padding: 18px 16px max(18px, env(safe-area-inset-bottom)); }
+  .mobile-app .model-settings-dialog .model-control { grid-template-columns: 78px minmax(0, 1fr); gap: 10px; }
+  .mobile-app .model-pill { max-width: min(70vw, 360px); }
+  .mobile-app .files-body { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); }
+  .mobile-app .file-row { min-height: 43px; padding: 7px 6px; }
+  .mobile-app .terminal-screen { min-height: 260px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}

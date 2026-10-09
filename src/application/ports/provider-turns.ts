@@ -1,20 +1,23 @@
-import type { PromptImageAttachment } from "../../domain/assistant.js";
-import type { A2ACommunicationSummaryItem } from "../../domain/a2a.js";
+import type { A2ACommunicationSummaryItemDto } from "../dto/a2a-communication.js";
+import type { AgentContextDto, PromptFileAttachmentDto, PromptImageAttachmentDto } from "../dto/prompt.js";
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
 
 export type ProviderPromptInput = {
   text: string;
   skillId?: string;
   cwd?: string;
-  images?: PromptImageAttachment[];
+  images?: PromptImageAttachmentDto[];
+  files?: PromptFileAttachmentDto[];
+  agentContext?: AgentContextDto;
   /** Internal Hive context. Provider transcript adapters keep this out of the visible user message. */
-  a2aCommunications?: A2ACommunicationSummaryItem[];
+  a2aCommunications?: A2ACommunicationSummaryItemDto[];
 };
 
 export type ProviderSteerInput = {
   text: string;
   skillId?: string;
   cwd?: string;
+  agentContext?: AgentContextDto;
 };
 
 export type ProviderPromptResult = { accepted: true; turnId?: string };

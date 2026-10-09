@@ -1,66 +1,32 @@
 import { ASSISTANT_PROVIDERS } from "../../../../src/domain/provider-catalog.js";
-import type { AssistantThread } from "../../../../src/domain/assistant.js";
+import type { AssistantThreadDto } from "../../../../src/application/dto/assistant.js";
 import { LOCAL_WORKSPACE_TARGET } from "../../../../src/domain/workspace.js";
-import { parseDaemonApiResponse } from "../../../../src/interfaces/contracts/daemon-response.js";
-import type { BridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
-import { normalizeDaemonCredentials } from "../../../../src/adapters/transport/daemon-credentials.js";
+import { parseDaemonApiResponse } from "../../../../src/application/dto/daemon/daemon-response.js";
+import type { BridgeEvent } from "../../../../src/application/dto/daemon/daemon-events.js";
+import { normalizeDaemonCredentials } from "../../../../src/infrastructure/transport/daemon-credentials.js";
 import { DaemonClientTransport } from "./daemon-client-transport";
-import type { MobileBridgeCredentials } from "./mobile-daemon-socket";
-import type { PreferencesPort } from "../shared/preferences";
-import { PREFERENCE_KEYS } from "../shared/preferences";
-
-export type DaemonConnection = {
-  id: string;
-  target: string;
-  endpoint: string;
-  hostname: string;
-  state: "disconnected" | "connecting" | "connected";
-  error: string;
-  threads: AssistantThread[];
-};
-type SavedDaemon = MobileBridgeCredentials & { id: string; hostname?: string; displayName?: string };
+import type { DaemonConnection, DaemonConnectionCredentials } from "../../../../src/presentation/shared/daemon-connections";
+import type { PreferencesPort } from "../../../../src/presentation/shared/preferences";
+import { DaemonConnectionStore, type SavedDaemonConnection } from "./daemon-connection-store";
+import { applyThreadCatalogEvent, replaceProviderThreads } from "./daemon-thread-catalog";
 
 /** Keep each authenticated transport and its catalog separate from the active conversation. */
 export class DaemonConnections {
-  private saved = new Map<string, SavedDaemon>();
+  private saved = new Map<string, SavedDaemonConnection>();
   private transports = new Map<string, Pick<DaemonClientTransport, "request" | "connect" | "disconnect" | "addEventListener">>();
   private connections: DaemonConnection[] = [];
   private listeners = new Set<() => void>();
   private eventListeners = new Set<(event: BridgeEvent) => void>();
   private started = false;
+  private readonly store: DaemonConnectionStore;
 
   constructor(
-    private preferences: PreferencesPort,
+    preferences: PreferencesPort,
     private createTransport: (id: string) => Pick<DaemonClientTransport, "request" | "connect" | "disconnect" | "addEventListener">,
   ) {
-    let values: unknown;
-    try {
-      const stored = preferences.getItem(PREFERENCE_KEYS.daemonConnections);
-      values = stored ? JSON.parse(stored) : undefined;
-      if (!stored) {
-        const legacy = preferences.getItem(PREFERENCE_KEYS.daemonPairing);
-        if (legacy) values = [{ ...JSON.parse(legacy), id: crypto.randomUUID() }];
-      }
-    } catch { values = undefined; }
-    if (Array.isArray(values)) for (const value of values) {
-      if (!value || typeof value !== "object" || typeof value.id !== "string" || !/^[\w-]{1,100}$/.test(value.id)) continue;
-      try {
-        const credentials = normalizeDaemonCredentials(value);
-        const displayName = typeof value.displayName === "string" ? value.displayName.trim().slice(0, 100) : "";
-        const saved = {
-          ...credentials,
-          id: value.id,
-          ...(typeof value.hostname === "string" ? { hostname: value.hostname } : {}),
-          ...(displayName ? { displayName } : {}),
-        };
-        this.saved.set(saved.id, saved);
-      } catch { /* Ignore invalid stored credentials without sending them. */ }
-    }
+    this.store = new DaemonConnectionStore(preferences);
+    for (const saved of this.store.load()) this.saved.set(saved.id, saved);
     this.connections = [...this.saved.values()].map((saved) => this.initial(saved));
-    if (!preferences.getItem(PREFERENCE_KEYS.daemonConnections) && this.saved.size > 0) {
-      this.persist();
-      preferences.removeItem(PREFERENCE_KEYS.daemonPairing);
-    }
   }
 
   snapshot = (): DaemonConnection[] => this.connections;
@@ -77,7 +43,7 @@ export class DaemonConnections {
     for (const id of this.saved.keys()) void this.connect(id).catch(() => undefined);
   }
 
-  async add(credentials: MobileBridgeCredentials): Promise<void> {
+  async add(credentials: DaemonConnectionCredentials): Promise<void> {
     const normalized = normalizeDaemonCredentials(credentials);
     if ([...this.saved.values()].some((saved) => saved.endpoint === normalized.endpoint)) {
       throw new Error("이미 등록된 데몬 주소입니다. 기존 연결에서 다시 연결하세요.");
@@ -154,7 +120,7 @@ export class DaemonConnections {
       const saved = this.saved.get(id);
       this.update(id, {
         hostname: saved?.displayName || catalog.hostname?.trim() || current?.hostname || "",
-        threads: [...(current?.threads.filter((thread) => thread.provider !== provider) ?? []), ...catalog.threads],
+        threads: replaceProviderThreads(current?.threads ?? [], provider, catalog.threads),
       });
       if (catalog.hostname && saved) { saved.hostname = catalog.hostname; this.persist(); }
     }
@@ -162,7 +128,7 @@ export class DaemonConnections {
     return result;
   }
 
-  updateThreads(target: string, threads: AssistantThread[]): void {
+  updateThreads(target: string, threads: AssistantThreadDto[]): void {
     this.update(target.slice(7), { threads });
   }
 
@@ -171,25 +137,9 @@ export class DaemonConnections {
     const id = event.target.slice(7);
     if (!this.saved.has(id)) return;
     const connection = this.connections.find((item) => item.id === id);
-    if (connection && event.provider) {
-      const provider = event.provider;
-      const matches = (thread: AssistantThread) => thread.provider === provider && thread.id === event.threadId;
-      if (event.method === "thread/deleted") this.update(id, { threads: connection.threads.filter((thread) => !matches(thread)) });
-      if (event.method === "thread/name/updated" && typeof event.params.name === "string") {
-        const title = event.params.name;
-        this.update(id, { threads: connection.threads.map((thread) => matches(thread) ? { ...thread, title } : thread) });
-      }
-      if (event.method === "thread/created" && typeof event.params.name === "string" && typeof event.params.cwd === "string") {
-        const thread: AssistantThread = {
-          id: event.threadId,
-          provider,
-          title: event.params.name,
-          cwd: event.params.cwd,
-          preview: typeof event.params.preview === "string" ? event.params.preview : "",
-          updatedAt: typeof event.params.updatedAt === "string" || typeof event.params.updatedAt === "number" ? event.params.updatedAt : null,
-        };
-        this.update(id, { threads: [...connection.threads.filter((item) => !matches(item)), thread] });
-      }
+    if (connection) {
+      const threads = applyThreadCatalogEvent(connection.threads, event);
+      if (threads) this.update(id, { threads });
     }
     if (event.method === "hive/transport/disconnected") this.update(id, { state: "connecting" });
     if (event.method === "hive/transport/failed") this.update(id, { state: "disconnected", error: typeof event.params.message === "string" ? event.params.message : "" });
@@ -204,7 +154,7 @@ export class DaemonConnections {
     await Promise.allSettled(ASSISTANT_PROVIDERS.map(({ id: provider }) => this.request("connect", { target: `daemon:${id}`, provider })));
   }
 
-  private initial(saved: SavedDaemon): DaemonConnection {
+  private initial(saved: SavedDaemonConnection): DaemonConnection {
     return {
       id: saved.id,
       target: `daemon:${saved.id}`,
@@ -220,7 +170,7 @@ export class DaemonConnections {
     this.connections = this.connections.map((connection) => connection.id === id ? { ...connection, ...changes } : connection);
     this.emit();
   }
-  private persist(): void { this.preferences.setItem(PREFERENCE_KEYS.daemonConnections, JSON.stringify([...this.saved.values()])); }
+  private persist(): void { this.store.save([...this.saved.values()]); }
   private emit(): void { for (const listener of this.listeners) listener(); }
   private publish(event: BridgeEvent): void { for (const listener of this.eventListeners) listener(event); }
 }

@@ -1,4 +1,4 @@
-import type { ReasoningEffort } from "../../domain/assistant.js";
+import type { ReasoningEffortDto } from "../dto/assistant.js";
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
 
 export type ProviderThreadSettingsInput = {
@@ -14,7 +14,7 @@ export type ProviderThreadSettingsResult = {
   effort?: string;
   permissionProfile?: string;
   currentModeId?: string;
-  supportedReasoningEfforts?: ReasoningEffort[];
+  supportedReasoningEfforts?: ReasoningEffortDto[];
 };
 
 export interface ProviderSettingsPort {

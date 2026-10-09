@@ -53,7 +53,7 @@ function run(command, args) {
 try {
   mkdirSync(outputDirectory, { recursive: true });
   const buildResult = await build({
-    entryPoints: [join(root, "src", "cli.ts")],
+    entryPoints: [join(root, "apps", "cli", "src", "main.ts")],
     bundle: true,
     platform: "node",
     target: "node20",

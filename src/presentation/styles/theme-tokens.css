@@ -1,0 +1,62 @@
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  font-family: "Space Grotesk", "DM Sans", system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+
+  /* Nothing palette */
+  --pure-black: #000000;
+  --window-grey: #b1b3b3;
+  --n-grey: #dcd7d2;
+  --pure-white: #ffffff;
+  --n-red: #c8102e;
+  --n-blue: #002f6c;
+  --n-yellow: #ffc700;
+  --n-green: #1a9c4b;
+  --nothing-widget-red: #d71920;
+
+  --background: var(--pure-black);
+  --surface: #111111;
+  --surface-raised: #1a1a1a;
+  --surface-well: #080808;
+  --border: #222222;
+  --border-visible: #333333;
+  --text-disabled: #666666;
+  --text-secondary: var(--window-grey);
+  --text-primary: var(--n-grey);
+  --text-display: var(--pure-white);
+  --accent: var(--n-red);
+  --accent-subtle: rgb(200 16 46 / 15%);
+  --success: var(--n-green);
+  --success-ink: var(--n-green);
+  --warning: var(--n-yellow);
+  --warning-ink: var(--n-yellow);
+  --error: var(--n-red);
+  /* A lighter blue keeps links legible on the black canvas. */
+  --interactive: #8eb8ff;
+  --font-mono: "Space Mono", "JetBrains Mono", "SF Mono", monospace;
+  --ease-out: cubic-bezier(.25, .1, .25, 1);
+  --motion-fast: 180ms;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --background: var(--n-grey);
+  --surface: var(--pure-white);
+  --surface-raised: #f0f0f0;
+  --surface-well: #f2f2ee;
+  --border: #c9c5c0;
+  --border-visible: var(--window-grey);
+  --text-disabled: #999999;
+  --text-secondary: #666666;
+  --text-primary: var(--pure-black);
+  --text-display: var(--pure-black);
+  --accent-subtle: rgb(200 16 46 / 10%);
+  --success-ink: #116331;
+  --warning-ink: #705700;
+  --interactive: var(--n-blue);
+}
+
+* { box-sizing: border-box; min-width: 0; }

@@ -1,4 +1,4 @@
-import type { CodexArchiveStoragePort, CodexCliOpenedSession, CodexCliPort, CodexCliSessionPort, CodexCliThreadRecord } from "../ports/codex-cli.js";
+import type { CodexArchiveStoragePort, CodexCliOpenedSession, CodexCliPort, CodexCliSessionPort, CodexCliSkillPort, CodexCliThreadRecord } from "../ports/codex-cli.js";
 import type { AvailableSkill, SkillInputPreparation, SkillSelection } from "../ports/skills.js";
 import { validateThreadId as validateThreadIdValue } from "../validation/thread-id.js";
 
@@ -36,7 +36,11 @@ export class CodexCliUseCases {
 
 /** Interactive Codex session actions shared by the CLI interface and provider adapter. */
 export class CodexCliSessionUseCases {
-  constructor(private readonly codex: CodexCliPort, private readonly sessions: CodexCliSessionPort) {}
+  constructor(
+    private readonly codex: CodexCliPort,
+    private readonly sessions: CodexCliSessionPort,
+    private readonly skills: CodexCliSkillPort,
+  ) {}
 
   validateThreadId(threadId: string): void {
     validateThreadIdValue(threadId);
@@ -53,13 +57,13 @@ export class CodexCliSessionUseCases {
 
   async buildSkillInput(target: string, threadId: string, selection: SkillSelection, request: string): Promise<SkillInputPreparation> {
     this.validateThreadId(threadId);
-    const catalog = await this.sessions.listCliSkills(target, threadId);
+    const catalog = await this.skills.listCliSkills(target, threadId);
     const resolution = resolveSkill(catalog.skills, selection);
     if (resolution.status !== "selected") return resolution;
     if (!resolution.skill.enabled) return { status: "disabled", skill: resolution.skill };
     return {
       status: "ready",
-      inputText: await this.sessions.buildSkillInput(target, threadId, resolution.skill, request),
+      inputText: await this.skills.buildSkillInput(target, threadId, resolution.skill, request),
       skill: resolution.skill,
     };
   }

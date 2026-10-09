@@ -39,8 +39,8 @@ if (process.platform === "linux") {
 // Node avoids Windows' inability to spawn npm.cmd directly without a shell.
 const npmExecPath = process.env.npm_execpath;
 const build = npmExecPath
-  ? spawnSync(process.execPath, [npmExecPath, "run", "build:web"], { cwd: desktopDir, stdio: "inherit" })
-  : spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build:web"], {
+  ? spawnSync(process.execPath, [npmExecPath, "run", "build", "--workspace=hive-web"], { cwd: desktopDir, stdio: "inherit" })
+  : spawnSync(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build", "--workspace=hive-web"], {
     cwd: desktopDir,
     stdio: "inherit",
     shell: process.platform === "win32",

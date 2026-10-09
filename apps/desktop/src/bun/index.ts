@@ -1,11 +1,12 @@
 import { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
-import { dispatchDaemonRequest, subscribeDaemonEvents } from "../../../../src/composition/daemon.js";
-import type { DaemonApiMethod, DaemonApiRequestMap, DaemonApiResponseMap } from "../../../../src/interfaces/contracts/daemon-api.js";
-import type { BridgeEvent, GtkSettings, HiveBridgeSchema } from "../shared/bridge.js";
+import { dispatchDaemonRequest, subscribeDaemonEvents } from "../../../../src/infrastructure/composition/daemon.js";
+import type { DaemonApiMethod, DaemonApiRequestMap, DaemonApiResponseMap } from "../../../../src/application/dto/daemon/daemon-api.js";
+import type { BridgeEvent, GtkSettings, HiveBridgeSchema } from "../../../../src/presentation/shared/bridge.js";
 import { PinnedDaemonClient, type DaemonCredentials } from "./daemon-client.js";
 import { parseGtkSettings } from "./gtk-settings.js";
 
 let mainWindow: BrowserWindow;
+let mainWindowFocused = true;
 const daemonBridges = new Map<string, PinnedDaemonClient>();
 
 const DEFAULT_GTK_SETTINGS: GtkSettings = {
@@ -14,10 +15,10 @@ const DEFAULT_GTK_SETTINGS: GtkSettings = {
   icons: { menu: "" },
   titleButtons: {
     spacing: 3,
-    minimize: { width: 0, height: 0, normal: "", hover: "", active: "", disabled: "" },
-    maximize: { width: 0, height: 0, normal: "", hover: "", active: "", disabled: "" },
-    restore: { width: 0, height: 0, normal: "", hover: "", active: "", disabled: "" },
-    close: { width: 0, height: 0, normal: "", hover: "", active: "", disabled: "" },
+    minimize: emptyTitleButtonRaster(),
+    maximize: emptyTitleButtonRaster(),
+    restore: emptyTitleButtonRaster(),
+    close: emptyTitleButtonRaster(),
   },
   button: {
     normal: { foreground: "#202020", background: "transparent" },
@@ -28,13 +29,18 @@ const DEFAULT_GTK_SETTINGS: GtkSettings = {
   headerbar: { background: "#eeeeec", foreground: "#202020", height: 46 },
 };
 
-async function readGtkSettings(): Promise<GtkSettings> {
+function emptyTitleButtonRaster() {
+  const states = { normal: "", hover: "", active: "", disabled: "" };
+  return { width: 0, height: 0, ...states, backdrop: { ...states } };
+}
+
+async function readGtkSettings(dark: boolean): Promise<GtkSettings> {
   const packagedPath = `${import.meta.dir}/bin/gtk-settings-helper`;
   const developmentPath = `${import.meta.dir}/../../.hutch/gtk-settings-helper`;
   const helperPath = await Bun.file(packagedPath).exists() ? packagedPath : developmentPath;
   if (!(await Bun.file(helperPath).exists())) return DEFAULT_GTK_SETTINGS;
   try {
-    const helper = Bun.spawn([helperPath], { stdout: "pipe", stderr: "ignore" });
+    const helper = Bun.spawn([helperPath, dark ? "--hive-theme=dark" : "--hive-theme=light"], { stdout: "pipe", stderr: "ignore" });
     const output = await new Response(helper.stdout).text();
     if (await helper.exited !== 0) return DEFAULT_GTK_SETTINGS;
     const decoded: unknown = JSON.parse(output);
@@ -128,7 +134,8 @@ const requestHandlers: NonNullable<BunRpcConfig["handlers"]["requests"]> = {
         return { maximized: mainWindow.isMaximized() };
       },
       getHostPlatform: () => ({ platform: process.platform }),
-      getGtkSettings: () => readGtkSettings(),
+      getWindowFocus: () => ({ focused: mainWindowFocused }),
+      getGtkSettings: ({ dark }) => readGtkSettings(dark),
       getWindowFrame: () => ({ ...mainWindow.getFrame(), maximized: mainWindow.isMaximized() }),
       setWindowFrame: ({ x, y, width, height }) => {
         if (![x, y, width, height].every(Number.isFinite)) throw new Error("Invalid window frame");
@@ -154,7 +161,7 @@ const requestHandlers: NonNullable<BunRpcConfig["handlers"]["requests"]> = {
 };
 
 const rpc = BrowserView.defineRPC<HiveBridgeSchema>({ handlers: { requests: requestHandlers, messages: {} } });
-subscribeDaemonEvents((event) => rpc.send.event(event));
+subscribeDaemonEvents(publishBridgeEvent);
 
 mainWindow = new BrowserWindow({
   title: "Hive",
@@ -166,8 +173,21 @@ mainWindow = new BrowserWindow({
   titleBarStyle: "hidden",
   rpc,
 });
+mainWindow.on("focus", () => publishWindowFocus(true));
+mainWindow.on("blur", () => publishWindowFocus(false));
 
+
+function publishWindowFocus(focused: boolean): void {
+  mainWindowFocused = focused;
+  rpc.send.windowFocus({ focused });
+}
 
 function publishBridgeEvent(event: BridgeEvent): void {
+  if (event.method === "turn/completed") {
+    Utils.showNotification({
+      title: "Hive 작업 완료",
+      body: "작업을 마친 세션이 있습니다.",
+    });
+  }
   rpc.send.event(event);
 }

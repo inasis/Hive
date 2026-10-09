@@ -1,0 +1,1 @@
+export const MAX_PI_SKILL_FILE_BYTES = 128 * 1024;

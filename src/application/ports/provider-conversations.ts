@@ -1,5 +1,11 @@
-import type { AssistantMode, AssistantModel, AssistantSkill, AssistantThread, TranscriptEntry } from "../../domain/assistant.js";
+import type {
+  AssistantModeDto,
+  AssistantModelDto,
+  AssistantSkillDto,
+  AssistantThreadDto,
+} from "../dto/assistant.js";
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
+import type { TranscriptEntryDto } from "../dto/transcript-cache.js";
 
 export type ProviderCreateThreadInput = {
   cwd: string;
@@ -12,6 +18,10 @@ export type ProviderCreateThreadInput = {
   preserveActiveThread?: boolean;
   /** Keep a provider-supported internal session in memory instead of persisting it. */
   ephemeral?: boolean;
+  /** Preassigned Hive UUID for the provider session being created. */
+  hiveSessionId?: string;
+  /** Hive session identity supplied to an isolated provider process for A2A calls. */
+  a2aCallerAgentId?: string;
   permissionPresets?: string[];
 };
 
@@ -24,14 +34,15 @@ export type ProviderOpenThreadOptions = {
 export type ProviderOpenThreadResult = {
   target: string;
   threadId: string;
+  hiveSessionId?: string;
   title: string;
   cwd: string;
-  entries: TranscriptEntry[];
-  skills: AssistantSkill[];
+  entries: TranscriptEntryDto[];
+  skills: AssistantSkillDto[];
   skillWarnings: string[];
-  modes?: AssistantMode[];
+  modes?: AssistantModeDto[];
   currentModeId?: string | null;
-  models?: AssistantModel[];
+  models?: AssistantModelDto[];
   modelWarning?: string;
   model: string;
   reasoningEffort: string | null;
@@ -39,7 +50,7 @@ export type ProviderOpenThreadResult = {
 };
 
 export type ProviderCreateThreadResult = Omit<ProviderOpenThreadResult, "target" | "threadId"> & {
-  thread: AssistantThread;
+  thread: AssistantThreadDto;
   threadId: string;
   /** Whether deleting this new thread requires reopening the caller's existing thread. */
   requiresFocusRestoreAfterDelete?: boolean;

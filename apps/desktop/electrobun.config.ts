@@ -1,7 +1,7 @@
 import type { ElectrobunConfig } from "electrobun";
 
 const copy: Record<string, string> = {
-  dist: "views/mainview",
+  "../web/dist": "views/mainview",
   ".hutch/node_modules/@lydell": "bun/node_modules/@lydell",
 };
 if (process.platform === "linux") {

@@ -1,14 +1,8 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-import type { TLSSocket } from "node:tls";
-import WebSocket, { type RawData } from "ws";
-import { normalizeDaemonCredentials } from "../../../../src/adapters/transport/daemon-credentials.js";
-import { DaemonReconnectPolicy } from "../../../../src/adapters/transport/daemon-reconnect-policy.js";
-import { parseBridgeEvent } from "../../../../src/interfaces/contracts/daemon-events.js";
-import { parseDaemonServerPacket } from "../../../../src/interfaces/contracts/daemon-transport.js";
-import type { BridgeEvent } from "../shared/bridge.js";
+import { normalizeDaemonCredentials } from "../../../../src/infrastructure/transport/daemon-credentials.js";
+import { DaemonReconnectPolicy } from "../../../../src/infrastructure/transport/daemon-reconnect-policy.js";
+import type { BridgeEvent } from "../../../../src/presentation/shared/bridge.js";
 import { BunDaemonRpcChannel } from "./daemon-rpc.js";
-
-const MAX_DAEMON_MESSAGE_BYTES = 16 * 1024 * 1024;
+import { PinnedDaemonWssSession } from "./pinned-daemon-wss-session.js";
 
 export type DaemonCredentials = {
   endpoint: string;
@@ -16,16 +10,11 @@ export type DaemonCredentials = {
   fingerprint: string;
 };
 
-type TlsWebSocket = WebSocket & {
-  _socket?: TLSSocket;
-};
-
 /** WSS client for the daemon endpoint, pinned to the certificate fingerprint shown by the daemon. */
 export class PinnedDaemonClient {
-  private socket?: WebSocket;
+  private session?: PinnedDaemonWssSession;
   private connected = false;
   private manuallyClosed = false;
-  private pingTimer?: ReturnType<typeof setInterval>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
   private reconnecting = false;
   private credentials?: DaemonCredentials;
@@ -34,20 +23,20 @@ export class PinnedDaemonClient {
 
   constructor(private readonly onEvent: (event: BridgeEvent) => void) {
     this.rpc = new BunDaemonRpcChannel({
-      isOpen: () => this.connected && this.socket?.readyState === WebSocket.OPEN,
+      isOpen: () => this.connected && Boolean(this.session?.isOpen()),
       send: (data, callback) => {
-        const socket = this.socket;
-        if (!socket || socket.readyState !== WebSocket.OPEN) {
+        const session = this.session;
+        if (!session) {
           callback(new Error("Hive 데몬 연결이 끊어졌습니다. 연결 설정을 확인하세요."));
           return;
         }
-        socket.send(data, callback);
+        session.send(data, callback);
       },
     });
   }
 
   connect(credentials: DaemonCredentials): Promise<void> {
-    if (this.socket && this.socket.readyState < WebSocket.CLOSING) {
+    if (this.session?.isConnectingOrOpen()) {
       return Promise.reject(new Error("A Hive daemon connection is already open"));
     }
 
@@ -66,88 +55,24 @@ export class PinnedDaemonClient {
 
   private openConnection(normalized: DaemonCredentials): Promise<void> {
     this.manuallyClosed = false;
-    const socket = new WebSocket(normalized.endpoint, {
-      rejectUnauthorized: false,
-      handshakeTimeout: 15_000,
-      maxPayload: MAX_DAEMON_MESSAGE_BYTES,
-      perMessageDeflate: false,
-    });
-    this.socket = socket;
-
-    return new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const timeout = setTimeout(() => fail(new Error("Hive 데몬에 연결하지 못했습니다. 주소와 네트워크를 확인하세요.")), 15_000);
-      const settle = (error?: Error): void => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        if (error) reject(error);
-        else resolve();
-      };
-      const fail = (error: Error): void => {
-        settle(error);
-        if (socket.readyState < WebSocket.CLOSING) socket.close();
-      };
-
-      socket.on("open", () => {
-        try {
-          const certificate = (socket as TlsWebSocket)._socket?.getPeerCertificate(true);
-          if (!certificate?.raw) throw new Error("Hive 데몬이 TLS 인증서를 보내지 않았습니다.");
-          const actual = createHash("sha256").update(certificate.raw).digest();
-          const expected = Buffer.from(normalized.fingerprint, "hex");
-          if (!timingSafeEqual(actual, expected)) {
-            throw new Error("입력한 인증서 지문이 데몬과 일치하지 않습니다.");
-          }
-
-          // Do not send the pairing token until the daemon certificate has matched the supplied pin.
-          socket.send(JSON.stringify({ type: "authenticate", token: normalized.token }));
-        } catch (error) {
-          fail(error instanceof Error ? error : new Error(String(error)));
-        }
-      });
-
-      socket.on("message", (raw: RawData) => {
-        let packet: ReturnType<typeof parseDaemonServerPacket>;
-        try {
-          const parsed: unknown = JSON.parse(rawMessage(raw));
-          packet = parseDaemonServerPacket(parsed);
-        } catch {
-          return;
-        }
-        if (!packet) return;
-
-        if (packet.type === "authenticated") {
-          this.connected = true;
-          this.startPing(socket);
-          settle();
-        } else if (packet.type === "event") {
-          const event = parseBridgeEvent(packet.event);
-          if (event) this.onEvent(event);
-        } else if (packet.type === "response") {
-          this.rpc.receiveResponse(packet);
-        } else if (packet.type === "error") {
-          fail(new Error(packet.error));
-        }
-      });
-
-      socket.on("error", (error) => {
-        if (!settled) fail(new Error(error.message || "Hive 데몬 TLS 연결에 실패했습니다."));
-      });
-
-      socket.on("close", (code, rawReason) => {
-        const wasConnected = this.connected;
+    let session: PinnedDaemonWssSession;
+    session = new PinnedDaemonWssSession(normalized, {
+      onAuthenticated: () => { this.connected = true; },
+      onEvent: (event) => this.onEvent(event),
+      onResponse: (packet) => this.rpc.receiveResponse(packet),
+      onClose: (reason, wasAuthenticated) => {
         this.connected = false;
-        if (this.socket === socket) this.socket = undefined;
-        this.stopPing();
-        const reason = closeReason(code, rawReason);
+        if (this.session === session) this.session = undefined;
         this.rpc.rejectAll(reason);
-        if (!settled) settle(new Error(reason));
-        if (wasConnected && !this.manuallyClosed) {
+        if (wasAuthenticated && !this.manuallyClosed) {
           this.onEvent({ target: "", threadId: "", method: "hive/transport/disconnected", params: { message: reason } });
           this.scheduleReconnect();
         }
-      });
+      },
     });
+    const connection = session.connect();
+    this.session = session;
+    return connection;
   }
 
   request(method: string, params: unknown): Promise<unknown> {
@@ -160,24 +85,10 @@ export class PinnedDaemonClient {
     this.clearReconnectTimer();
     this.reconnecting = false;
     this.connected = false;
-    this.stopPing();
     this.rpc.rejectAll("Hive 데몬 연결을 종료했습니다.");
-    const socket = this.socket;
-    this.socket = undefined;
-    if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, "Client disconnected");
-  }
-
-  private startPing(socket: WebSocket): void {
-    this.stopPing();
-    this.pingTimer = setInterval(() => {
-      if (socket.readyState === WebSocket.OPEN) socket.ping();
-    }, 25_000);
-    this.pingTimer.unref?.();
-  }
-
-  private stopPing(): void {
-    if (this.pingTimer) clearInterval(this.pingTimer);
-    this.pingTimer = undefined;
+    const session = this.session;
+    this.session = undefined;
+    session?.close();
   }
 
   private scheduleReconnect(): void {
@@ -212,15 +123,4 @@ export class PinnedDaemonClient {
     this.reconnectTimer = undefined;
   }
 
-}
-
-function rawMessage(raw: RawData): string {
-  if (typeof raw === "string") return raw;
-  if (Array.isArray(raw)) return Buffer.concat(raw).toString("utf8");
-  return Buffer.from(raw).toString("utf8");
-}
-
-function closeReason(code: number, reason: Buffer): string {
-  if (code === 1008) return "페어링 토큰을 확인하세요.";
-  return reason.toString("utf8") || "Hive 데몬 연결이 종료되었습니다.";
 }

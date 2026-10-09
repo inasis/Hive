@@ -14,7 +14,11 @@
     "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "baseUrl": ".",
+    "paths": {
+      "electrobun/view": ["./.hutch/devkit/api/browser/index.ts"]
+    }
   },
-  "include": ["src/main.tsx", "src/ui/**/*.ts", "src/ui/**/*.tsx", "vite.config.ts"]
+  "include": ["src/bun/**/*.ts", "src/platform/**/*.ts", "src/platform/**/*.tsx", "src/presentation/**/*.tsx"]
 }

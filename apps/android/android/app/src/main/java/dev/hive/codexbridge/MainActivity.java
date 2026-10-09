@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(HiveTransportPlugin.class);
+        registerPlugin(HiveDevicePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

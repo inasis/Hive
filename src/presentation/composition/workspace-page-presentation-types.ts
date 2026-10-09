@@ -1,0 +1,51 @@
+import type { Dispatch, SetStateAction } from "react";
+import type { useActiveConversationState } from "../features/conversation/useActiveConversationState";
+import type { useApprovalQueue } from "../features/conversation/useApprovalQueue";
+import type { useApprovalResponse } from "../features/conversation/useApprovalResponse";
+import type { useComposerSubmission } from "../features/conversation/useComposerSubmission";
+import type { useConversationTurnControls } from "../features/conversation/useConversationTurnControls";
+import type { useConnectionState } from "../features/connection/useConnectionState";
+import type { useSessionForkState } from "../features/sessions/useSessionForkState";
+import type { useThemeSettings } from "../features/settings/useThemeSettings";
+import type { usePersonaProfiles } from "../features/settings/usePersonaProfiles";
+import type { useSkillsBrowser } from "../features/skills/useSkillsBrowser";
+import type { useWorkspaceNavigation } from "../features/workspace/useWorkspaceNavigation";
+import type { useWorkspaceTabs } from "../features/workspace/useWorkspaceTabs";
+import type { deriveWorkspaceViewModel } from "../features/workspace/workspace-view-model";
+import type { useWorkspaceConnectionFeatures } from "./useWorkspaceConnectionFeatures";
+import type { useWorkspaceConversationFeatures } from "./useWorkspaceConversationFeatures";
+import type { useWorkspaceSessionFeatures } from "./useWorkspaceSessionFeatures";
+import type { useDesktopUiRuntime } from "../shared/desktop-ui-runtime";
+
+type DesktopRuntime = ReturnType<typeof useDesktopUiRuntime>;
+type DaemonConnection = ReturnType<DesktopRuntime["bridge"]["daemonConnections"]["snapshot"]>[number];
+
+export type WorkspacePagePresentationProps = {
+  isWindowsDesktop: boolean;
+  externalActions: {
+    onChangeDaemonSettings?: () => void;
+    onRenameDaemon?: (id: string) => void;
+    onUseDirectConnection?: () => void;
+    onUseDaemonConnection?: () => void;
+  };
+  platform: { isDaemonClient: boolean; isLinuxDesktop: boolean; isMobileApp: boolean; isWideLayout: boolean };
+  personaProfiles: ReturnType<typeof usePersonaProfiles>;
+  daemons: DaemonConnection[];
+  theme: ReturnType<typeof useThemeSettings>;
+  connectionUi: ReturnType<typeof useConnectionState>;
+  conversationUi: ReturnType<typeof useActiveConversationState>;
+  forkUi: ReturnType<typeof useSessionForkState>;
+  navigation: ReturnType<typeof useWorkspaceNavigation>;
+  tabs: ReturnType<typeof useWorkspaceTabs>;
+  view: ReturnType<typeof deriveWorkspaceViewModel>;
+  conversationFeatures: ReturnType<typeof useWorkspaceConversationFeatures>;
+  connectionFeatures: ReturnType<typeof useWorkspaceConnectionFeatures>;
+  sessionFeatures: ReturnType<typeof useWorkspaceSessionFeatures>;
+  skillsBrowser: ReturnType<typeof useSkillsBrowser>;
+  approvalQueue: ReturnType<typeof useApprovalQueue>;
+  turnControls: ReturnType<typeof useConversationTurnControls>;
+  composerSubmission: ReturnType<typeof useComposerSubmission>;
+  approvalResponse: ReturnType<typeof useApprovalResponse>;
+  notice: string;
+  setNotice: Dispatch<SetStateAction<string>>;
+};

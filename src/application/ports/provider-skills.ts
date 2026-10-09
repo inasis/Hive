@@ -1,7 +1,7 @@
-import type { AssistantSkill } from "../../domain/assistant.js";
+import type { AssistantSkillDto } from "../dto/assistant.js";
 import type { AssistantProvider } from "../../domain/provider-catalog.js";
 
-export type ProviderSkillCatalog = { skills: AssistantSkill[]; warnings: string[] };
+export type ProviderSkillCatalog = { skills: AssistantSkillDto[]; warnings: string[] };
 
 /** Provider skill discovery for an already opened conversation. */
 export interface ProviderSkillsPort {

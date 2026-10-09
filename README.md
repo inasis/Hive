@@ -59,7 +59,7 @@ cd Hive-daemon-linux-x64
 체크섬 확인 결과가 `OK`인지 살펴본 뒤 데몬을 시작합니다.
 
 ```sh
-./hive daemon --mobile
+./hive daemon
 ```
 
 데몬은 다음 정보를 터미널에 출력합니다.
@@ -97,7 +97,7 @@ OpenCode CLI를 설치하고 provider에 로그인합니다. 기본 설정에서
 
 ```sh
 export HIVE_OPENCODE_BIN="$HOME/.opencode/bin/opencode"
-./hive daemon --mobile
+./hive daemon
 ```
 
 이미 실행 중인 OpenCode 서버를 사용하려면 서버 주소를 설정하세요. Basic 인증을 사용하는 서버는 사용자 이름과 비밀번호도 지정합니다.
@@ -106,10 +106,40 @@ export HIVE_OPENCODE_BIN="$HOME/.opencode/bin/opencode"
 export HIVE_OPENCODE_URL=http://127.0.0.1:4096
 export HIVE_OPENCODE_USERNAME=opencode
 export HIVE_OPENCODE_PASSWORD='서버 비밀번호'
-./hive daemon --mobile
+./hive daemon
 ```
 
 환경 변수를 바꾼 뒤에는 데몬을 다시 시작해야 적용됩니다.
+
+### Pi
+
+Pi CLI를 설치합니다. Hive에서 Pi를 선택하면 로컬 Pi의 RPC 세션을 사용합니다. Hive 모델 목록과 기본 모델은 Pi RPC가 반환한 사용 가능한 모델을 따릅니다. `~/.pi/agent/models.json`에 Pi에서 사용할 provider와 모델을 설정하세요. API 키는 파일에 직접 넣거나 Pi 프로세스가 읽을 수 있는 환경 변수 이름으로 지정할 수 있습니다.
+
+```json
+{
+  "providers": {
+    "hive": {
+      "baseUrl": "http://127.0.0.1:9000/v1",
+      "apiKey": "HIVE_PI_API_KEY",
+      "api": "openai-completions",
+      "models": [{
+        "id": "gemma-4-12b",
+        "name": "gemma-4-12b",
+        "reasoning": false,
+        "input": ["text"],
+        "contextWindow": 131072,
+        "maxTokens": 8192,
+        "cost": { "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0 },
+        "compat": { "supportsDeveloperRole": false, "supportsReasoningEffort": false }
+      }]
+    }
+  }
+}
+```
+
+`apiKey` 예시의 `HIVE_PI_API_KEY`는 Pi가 찾을 환경 변수 이름입니다. 민감한 키를 리터럴로 저장할 때는 설정 파일을 소유자만 읽을 수 있게 제한하세요. Pi가 `PATH`에 없으면 `HIVE_PI_BIN`에 실행 파일 경로를 지정합니다. Pi provider는 Hive host의 로컬 작업공간에서 실행되며 SSH 작업공간은 지원하지 않습니다.
+
+Pi 모델이 RPC에서 광고하는 Thinking 수준은 세션 설정에 표시됩니다. 모델의 `input`에 `image`가 있으면 이미지 프롬프트도 보낼 수 있습니다. Pi 전용 `/compact`, `/stats`, `/export`, `/bash`, `/follow_up`, `/clear_queue`, `/steering_mode`, `/follow_up_mode`, `/auto_compaction`, `/auto_retry`, `/abort_retry`, `/abort_bash` 명령은 Pi RPC를 직접 호출합니다. `/bash`는 작업공간에서 셸 명령을 즉시 실행합니다. Pi RPC에는 Codex 방식의 Hive 권한 프로필과 도구 승인 요청이 없으므로, 도구 권한은 Pi 자체 설정을 따릅니다.
 
 ### Kiro
 
@@ -117,7 +147,7 @@ Kiro CLI를 설치하고 로그인합니다. `kiro-cli`가 `PATH`에 없다면 �
 
 ```sh
 export HIVE_KIRO_BIN="$HOME/.local/bin/kiro-cli"
-./hive daemon --mobile
+./hive daemon
 ```
 
 ## 다른 네트워크에서 연결
@@ -125,7 +155,7 @@ export HIVE_KIRO_BIN="$HOME/.local/bin/kiro-cli"
 먼저 VPN으로 데몬 컴퓨터와 클라이언트를 같은 사설 네트워크에 연결하는 방법을 권장합니다. 공인 IP로 직접 연결하려면 라우터에서 TCP 4753을 데몬 컴퓨터로 전달하고 방화벽에서도 허용한 뒤, 실제 공인 IP를 데몬에 지정합니다.
 
 ```sh
-./hive daemon --mobile --public-url wss://<공인-IP>:4753/rpc
+./hive daemon --public-url wss://<공인-IP>:4753/rpc
 ```
 
 앱에는 데몬이 출력한 주소와 인증서 지문, 토큰을 입력합니다. `<공인-IP>`를 실제 주소로 바꾸세요. ISP의 CGNAT 환경에서는 포트 전달이 동작하지 않을 수 있습니다.

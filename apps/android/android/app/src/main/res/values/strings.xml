@@ -7,4 +7,8 @@
     <string name="daemon_connection_channel">Hive 연결 유지</string>
     <string name="daemon_connection_title">Hive 데몬 연결 유지 중</string>
     <string name="daemon_connection_description">백그라운드에서도 데몬 연결을 유지하고 복구합니다.</string>
+    <string name="session_completion_channel">세션 작업 완료</string>
+    <string name="session_completion_channel_description">세션 작업이 끝났을 때 알립니다.</string>
+    <string name="session_completion_notification_title">Hive 작업 완료</string>
+    <string name="session_completion_notification_body">작업을 마친 세션이 있습니다.</string>
 </resources>

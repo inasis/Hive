@@ -4,7 +4,7 @@ set -euo pipefail
 # ============================================================
 # 설정: 실행 중인 CLI도, 저장된 실행 정보도, 넘겨받은 인자도 없을 때 사용할 인자
 # ============================================================
-DEFAULT_ARGS=(daemon --mobile --public-url wss://123.214.207.184/rpc)
+DEFAULT_ARGS=(daemon --public-url wss://123.214.207.184/rpc)
 
 PORT="${PORT:-}"             # 지정하면 종료 후 포트 해제까지 대기
 HEALTH_URL="${HEALTH_URL:-}" # 지정하면 시작 후 헬스체크
@@ -22,7 +22,7 @@ save() { ( umask 077; declare -p CWD CMD ENVS > "$STATE" ); }
 
 # 1. 실행 중인 node CLI 찾기 (래퍼 sh/npm 제외: comm이 node인 것만)
 PID=""
-for p in $(pgrep -f 'node .*dist/cli\.js' || true); do
+for p in $(pgrep -f 'node .*dist/apps/cli/src/main\.js' || true); do
     [[ "$(cat "/proc/$p/comm" 2>/dev/null)" == node ]] && { PID=$p; break; }
 done
 
@@ -37,7 +37,7 @@ elif (($# > 0)) || [[ ! -f "$STATE" ]]; then
     ARGS=("$@")
     ((${#ARGS[@]} > 0)) || ARGS=("${DEFAULT_ARGS[@]}")
     ((${#ARGS[@]} > 0)) || die "실행 중인 CLI, 저장본, 인자, DEFAULT_ARGS가 모두 없습니다."
-    CWD="$ROOT"; CMD=(node dist/cli.js "${ARGS[@]}")
+    CWD="$ROOT"; CMD=(node dist/apps/cli/src/main.js "${ARGS[@]}")
     mapfile -d '' ENVS < <(env -0)
     save
     echo "[info] 실행 중인 CLI 없음 → 인자로 시작합니다."
